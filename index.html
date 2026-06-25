@@ -978,19 +978,45 @@
                     document.getElementById('movieYear').value = movie.Year;
 
                     // Diğer her şey Türkçeye çevrilir
-                    const [genreTR, plotTR, directorTR] = await Promise.all([
+                    const [genreTR, plotTR, directorTR, actorsTR, writerTR, awardsTR] = await Promise.all([
                         translateText(movie.Genre),
                         translateText(movie.Plot),
-                        translateText(movie.Director)
+                        translateText(movie.Director),
+                        translateText(movie.Actors),
+                        translateText(movie.Writer),
+                        translateText(movie.Awards)
                     ]);
 
                     document.getElementById('movieGenre').value = movie.Genre !== 'N/A' ? genreTR : 'Belirtilmemiş';
                     document.getElementById('moviePlot').value = movie.Plot !== 'N/A' ? plotTR : 'Açıklama yok';
                     document.getElementById('movieDirector').value = movie.Director !== 'N/A' ? directorTR : 'Belirtilmemiş';
                     document.getElementById('movieRating').value = movie.imdbRating !== 'N/A' ? movie.imdbRating : 'N/A';
-                    
+
                     // Poster URL'sini gizli bir data attribute'a kaydet
                     movieForm.dataset.posterUrl = movie.Poster !== 'N/A' ? movie.Poster : '';
+
+                    // Yeni alanları gizli data attribute'larına kaydet
+                    movieForm.dataset.actors = movie.Actors !== 'N/A' ? actorsTR : '';
+                    movieForm.dataset.writer = movie.Writer !== 'N/A' ? writerTR : '';
+                    movieForm.dataset.runtime = movie.Runtime !== 'N/A' ? movie.Runtime : '';
+                    movieForm.dataset.rated = movie.Rated !== 'N/A' ? movie.Rated : '';
+                    movieForm.dataset.released = movie.Released !== 'N/A' ? movie.Released : '';
+                    movieForm.dataset.language = movie.Language !== 'N/A' ? movie.Language : '';
+                    movieForm.dataset.country = movie.Country !== 'N/A' ? movie.Country : '';
+                    movieForm.dataset.awards = movie.Awards !== 'N/A' ? awardsTR : '';
+                    movieForm.dataset.boxoffice = movie.BoxOffice !== 'N/A' ? movie.BoxOffice : '';
+
+                    // Rotten Tomatoes ve Metacritic puanlarını Ratings dizisinden bul
+                    let rottenTomatoes = '';
+                    let metacritic = '';
+                    if (Array.isArray(movie.Ratings)) {
+                        movie.Ratings.forEach(r => {
+                            if (r.Source === 'Rotten Tomatoes') rottenTomatoes = r.Value;
+                            if (r.Source === 'Metacritic') metacritic = r.Value;
+                        });
+                    }
+                    movieForm.dataset.rottenTomatoes = rottenTomatoes;
+                    movieForm.dataset.metacritic = metacritic;
 
                     movieSearchInput.value = movie.Title;
                     showToast('Film bilgileri yüklendi! ✓');
@@ -1030,6 +1056,17 @@
                 rating: rating,
                 myRating: myRating || null,
                 posterUrl: movieForm.dataset.posterUrl || '',
+                actors: movieForm.dataset.actors || '',
+                writer: movieForm.dataset.writer || '',
+                runtime: movieForm.dataset.runtime || '',
+                rated: movieForm.dataset.rated || '',
+                released: movieForm.dataset.released || '',
+                language: movieForm.dataset.language || '',
+                country: movieForm.dataset.country || '',
+                awards: movieForm.dataset.awards || '',
+                boxoffice: movieForm.dataset.boxoffice || '',
+                rottenTomatoes: movieForm.dataset.rottenTomatoes || '',
+                metacritic: movieForm.dataset.metacritic || '',
                 watched: false,
                 dateAdded: new Date().toISOString()
             };
@@ -1226,6 +1263,17 @@
             movieForm.reset();
             searchSuggestions.classList.remove('active');
             delete movieForm.dataset.posterUrl;
+            delete movieForm.dataset.actors;
+            delete movieForm.dataset.writer;
+            delete movieForm.dataset.runtime;
+            delete movieForm.dataset.rated;
+            delete movieForm.dataset.released;
+            delete movieForm.dataset.language;
+            delete movieForm.dataset.country;
+            delete movieForm.dataset.awards;
+            delete movieForm.dataset.boxoffice;
+            delete movieForm.dataset.rottenTomatoes;
+            delete movieForm.dataset.metacritic;
         }
 
         // Film Detay Modalı
@@ -1250,7 +1298,11 @@
                 
                 <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
                     <span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">📅 ${movie.year}</span>
+                    ${movie.runtime ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">⏱️ ${movie.runtime}</span>` : ''}
+                    ${movie.rated ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">🔞 ${movie.rated}</span>` : ''}
                     ${movie.rating && movie.rating !== 'N/A' ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">⭐ IMDb: ${movie.rating}</span>` : ''}
+                    ${movie.rottenTomatoes ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">🍅 ${movie.rottenTomatoes}</span>` : ''}
+                    ${movie.metacritic ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">Ⓜ️ ${movie.metacritic}</span>` : ''}
                     <span style="background: ${movie.watched ? '#00f0a020' : '#1a1a1a'}; color: ${movie.watched ? '#00f0a0' : '#e0e0e0'}; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">${movie.watched ? '✓ İzlendi' : 'İzlenmedi'}</span>
                 </div>
 
@@ -1272,9 +1324,34 @@
                     <div style="color: #ccc;">${movie.director || 'Belirtilmemiş'}</div>
                 </div>
 
+                ${movie.writer ? `
+                <div style="margin-bottom: 12px;">
+                    <div style="color: #d4af37; font-weight: 600; margin-bottom: 4px;">Senarist</div>
+                    <div style="color: #ccc;">${movie.writer}</div>
+                </div>` : ''}
+
+                ${movie.actors ? `
+                <div style="margin-bottom: 12px;">
+                    <div style="color: #d4af37; font-weight: 600; margin-bottom: 4px;">🎭 Oyuncular</div>
+                    <div style="color: #ccc;">${movie.actors}</div>
+                </div>` : ''}
+
                 <div style="margin-bottom: 20px;">
                     <div style="color: #d4af37; font-weight: 600; margin-bottom: 4px;">Konusu</div>
                     <div style="color: #ccc; line-height: 1.5;">${movie.plot || 'Açıklama yok'}</div>
+                </div>
+
+                ${movie.awards ? `
+                <div style="margin-bottom: 12px;">
+                    <div style="color: #d4af37; font-weight: 600; margin-bottom: 4px;">🏆 Ödüller</div>
+                    <div style="color: #ccc;">${movie.awards}</div>
+                </div>` : ''}
+
+                <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; font-size: 0.85em; color: #999;">
+                    ${movie.country ? `<span>🌍 ${movie.country}</span>` : ''}
+                    ${movie.language ? `<span>🗣️ ${movie.language}</span>` : ''}
+                    ${movie.released ? `<span>🎬 Vizyon: ${movie.released}</span>` : ''}
+                    ${movie.boxoffice ? `<span>💰 Gişe: ${movie.boxoffice}</span>` : ''}
                 </div>
 
                 <button class="modal-btn secondary" style="width: 100%;" onclick="closeDetailModal()">Kapat</button>
