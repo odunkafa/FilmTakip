@@ -1367,9 +1367,44 @@
         }
 
         // Başlatma (sadece giriş yapıldıktan sonra çalışır)
-        function initAppAfterLogin() {
+        async function initAppAfterLogin() {
             renderMovies();
             updateStats();
+            await loadMoviesFromDrive();
+        }
+
+        // Drive'daki Google Sheet'ten film verilerini çekip yerel listeyi günceller
+        async function loadMoviesFromDrive() {
+            if (!appsScriptUrl || !googleIdToken) return;
+
+            syncIndicator.classList.add('syncing');
+            syncText.textContent = 'Drive\'dan yükleniyor...';
+
+            try {
+                const url = appsScriptUrl + '?idToken=' + encodeURIComponent(googleIdToken);
+                const response = await fetch(url, { method: 'GET' });
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.error || 'Bilinmeyen hata');
+                }
+
+                // Drive'dan gelen veri, yereldekinden farklıysa (özellikle yerel boşsa) güncelle
+                if (Array.isArray(result.movies)) {
+                    movies = result.movies;
+                    saveMovies();
+                    renderMovies();
+                    updateStats();
+                }
+
+                syncIndicator.classList.remove('syncing', 'error');
+                syncText.textContent = 'Senkronizasyon aktif';
+            } catch (error) {
+                console.error('Drive\'dan yükleme hatası:', error);
+                syncIndicator.classList.remove('syncing');
+                syncIndicator.classList.add('error');
+                syncText.textContent = 'Yükleme hatası: ' + error.message;
+            }
         }
 
         // Google script yüklenince giriş butonunu hazırla
