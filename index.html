@@ -1297,17 +1297,22 @@
             syncText.textContent = 'Senkronize ediliyor...';
 
             try {
-                await fetch(appsScriptUrl, {
+                const response = await fetch(appsScriptUrl, {
                     method: 'POST',
-                    mode: 'no-cors',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'text/plain;charset=utf-8'
                     },
                     body: JSON.stringify({
                         idToken: googleIdToken,
                         movies: movies
                     })
                 });
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.error || 'Bilinmeyen hata');
+                }
 
                 syncIndicator.classList.remove('syncing', 'error');
                 syncIndicator.classList.add('pulse');
@@ -1323,7 +1328,7 @@
                 console.error('Senkronizasyon hatası:', error);
                 syncIndicator.classList.remove('syncing');
                 syncIndicator.classList.add('error');
-                syncText.textContent = 'Senkronizasyon hatası';
+                syncText.textContent = 'Hata: ' + error.message;
             }
         }
 
