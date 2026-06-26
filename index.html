@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Film Kütüphanesi - Google Drive Senkronizasyon</title>
+
+    <!-- PWA Desteği -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#d4af37">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Film Takip">
+    <link rel="apple-touch-icon" href="film_icon_192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="film_icon_192.png">
+
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         * {
@@ -1493,6 +1504,15 @@
                 }
             }, 100);
         });
+
+        // Service Worker kaydı (PWA - "Ana ekrana ekle" desteği için)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => {
+                    console.log('Service worker kaydı başarısız:', err);
+                });
+            });
+        }
     </script>
 </body>
 </html>
