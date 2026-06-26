@@ -1207,13 +1207,27 @@
                     throw new Error(result.error || 'Bilinmeyen hata');
                 }
 
-                // Drive'dan gelen veri, yereldekinden farklıysa (özellikle yerel boşsa) güncelle
-                if (Array.isArray(result.movies)) {
-                    movies = result.movies;
-                    saveMovies();
-                    renderMovies();
-                    updateStats();
+                if (!Array.isArray(result.movies)) {
+                    throw new Error('Drive\'dan beklenmeyen veri formatı geldi');
                 }
+
+                // GÜVENLİK KONTROLÜ: Drive'dan boş liste geldi ama yerelde film varsa,
+                // bu büyük olasılıkla bir hata/aksaklık belirtisidir. Yerel veriyi SİLMİYORUZ,
+                // sadece kullanıcıyı uyarıyoruz. Veri kaybını önlemek bundan daha önemli.
+                if (result.movies.length === 0 && movies.length > 0) {
+                    console.warn('Drive boş liste döndürdü ama yerelde ' + movies.length + ' film var. Güvenlik amacıyla yerel veri korunuyor.');
+                    syncIndicator.classList.remove('syncing');
+                    syncIndicator.classList.add('error');
+                    syncText.textContent = 'Uyarı: Drive boş görünüyor, yerel veriniz korundu';
+                    showToast('⚠️ Drive boş döndü, mevcut filmleriniz korundu. Lütfen Sheet\'i kontrol edin.');
+                    return;
+                }
+
+                // Drive'dan gelen veri ile yerel listeyi güncelle
+                movies = result.movies;
+                saveMovies();
+                renderMovies();
+                updateStats();
 
                 syncIndicator.classList.remove('syncing', 'error');
                 syncText.textContent = 'Senkronizasyon aktif';
@@ -1222,6 +1236,7 @@
                 syncIndicator.classList.remove('syncing');
                 syncIndicator.classList.add('error');
                 syncText.textContent = 'Yükleme hatası: ' + error.message;
+                // Hata durumunda da yerel veriye DOKUNMUYORUZ - güvenlik önceliği
             }
         }
 
