@@ -75,20 +75,19 @@
         // PWA olarak yüklendiğinde, açık panel/modal varken geri tuşuna basınca
         // uygulamadan çıkmak yerine önce o panel/modalı kapatmasını sağlar.
         let uiStack = []; // Açık olan panel/modalların kapatma fonksiyonlarını tutar
+        let isClosingFromHistory = false; // popstate kaynaklı kapatma sırasında tekrar history.back() tetiklenmesin
 
         function pushUiState(closeFn) {
             uiStack.push(closeFn);
             history.pushState({ uiLayer: uiStack.length }, '');
         }
 
+        // Manuel kapatma butonlarından çağrılır. Stack'e DOKUNMAZ -
+        // sadece history.back() tetikler, gerçek temizlik popstate handler'ında, TEK YERDE yapılır.
         function popUiStateIfMatch(closeFn) {
-            // Kullanıcı kapatma butonuna manuel tıkladığında da history'yi senkron tutmak için
             const idx = uiStack.lastIndexOf(closeFn);
-            if (idx !== -1) {
-                uiStack.splice(idx, 1);
-                if (history.state && history.state.uiLayer) {
-                    history.back();
-                }
+            if (idx !== -1 && !isClosingFromHistory) {
+                history.back();
             }
         }
 
@@ -100,8 +99,10 @@
 
         window.addEventListener('popstate', () => {
             if (uiStack.length > 0) {
+                isClosingFromHistory = true;
                 const closeFn = uiStack.pop();
-                closeFn(true); // true: history'den çağrıldığını belirtir, tekrar pushState yapmasın
+                closeFn(true); // true: history'den çağrıldığını belirtir, tekrar history.back() tetiklemesin
+                isClosingFromHistory = false;
             }
         });
         const GEMINI_API_KEY = 'AIzaSyDjvVmA4Y0pj0eYyp-5ly4zr7zPG2KEaug';
@@ -358,6 +359,9 @@
             try {
                 searchSuggestions.classList.remove('active');
                 movieSearchInput.value = 'Yükleniyor...';
+                document.getElementById('moviePreviewArea').innerHTML = `
+                    <div style="text-align: center; padding: 20px;"><div class="loading-spinner"></div></div>
+                `;
 
                 const response = await fetch(
                     `https://www.omdbapi.com/?i=${imdbID}&apikey=${OMDB_API}&plot=full`
@@ -398,6 +402,7 @@
                     movieForm.dataset.country = movie.Country !== 'N/A' ? movie.Country : '';
                     movieForm.dataset.awards = movie.Awards !== 'N/A' ? awardsTR : '';
                     movieForm.dataset.boxoffice = movie.BoxOffice !== 'N/A' ? movie.BoxOffice : '';
+                    movieForm.dataset.type = movie.Type || '';
 
                     // Rotten Tomatoes ve Metacritic puanlarını Ratings dizisinden bul
                     let rottenTomatoes = '';
@@ -412,12 +417,110 @@
                     movieForm.dataset.metacritic = metacritic;
 
                     movieSearchInput.value = movie.Title;
+
+                    renderMoviePreview({
+                        title: movie.Title,
+                        type: movie.Type,
+                        year: movie.Year,
+                        runtime: movie.Runtime !== 'N/A' ? movie.Runtime : '',
+                        rated: movie.Rated !== 'N/A' ? movie.Rated : '',
+                        rating: movie.imdbRating !== 'N/A' ? movie.imdbRating : '',
+                        rottenTomatoes: rottenTomatoes,
+                        metacritic: metacritic,
+                        genre: movie.Genre !== 'N/A' ? genreTR : 'Belirtilmemiş',
+                        director: movie.Director !== 'N/A' ? directorTR : 'Belirtilmemiş',
+                        writer: movie.Writer !== 'N/A' ? writerTR : '',
+                        actors: movie.Actors !== 'N/A' ? actorsTR : '',
+                        plot: movie.Plot !== 'N/A' ? plotTR : 'Açıklama yok',
+                        awards: movie.Awards !== 'N/A' ? awardsTR : '',
+                        country: movie.Country !== 'N/A' ? movie.Country : '',
+                        language: movie.Language !== 'N/A' ? movie.Language : '',
+                        released: movie.Released !== 'N/A' ? movie.Released : '',
+                        boxoffice: movie.BoxOffice !== 'N/A' ? movie.BoxOffice : '',
+                        posterUrl: movie.Poster !== 'N/A' ? movie.Poster : ''
+                    });
+
+                    document.getElementById('movieNameTRGroup').style.display = 'block';
+                    document.getElementById('myRatingGroup').style.display = 'block';
+
                     showToast('Film bilgileri yüklendi! ✓');
                 }
             } catch (error) {
                 console.error('Film yükleme hatası:', error);
                 showToast('Film bilgileri yüklenemedi');
             }
+        }
+
+        // Film Ekle modalında, detay modalına benzer zengin bir önizleme gösterir
+        function renderMoviePreview(m) {
+            const typeLabel = m.type === 'series'
+                ? '<span style="background:#9b7ff020; color:#9b7ff0; padding:4px 10px; border-radius:6px; font-size:0.8em; font-weight:600;">📺 Dizi</span>'
+                : '<span style="background:#d4af3720; color:#d4af37; padding:4px 10px; border-radius:6px; font-size:0.8em; font-weight:600;">🎬 Film</span>';
+
+            document.getElementById('moviePreviewArea').innerHTML = `
+                <div style="background: #1a1a1a; border-radius: 10px; padding: 18px; margin-bottom: 15px; border: 1px solid #333;">
+                    <div style="text-align: center; margin-bottom: 12px;">
+                        <div style="width: 100%; max-height: 260px; border-radius: 8px; overflow: hidden; background: #2a2a2a; display: flex; align-items: center; justify-content: center;">
+                            ${m.posterUrl
+                                ? `<img src="${m.posterUrl}" alt="${m.title}" style="width: 100%; object-fit: contain; max-height: 260px;">`
+                                : `<span style="font-size: 3em; padding: 50px 0;">🎬</span>`
+                            }
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 8px;">${typeLabel}</div>
+                    <h3 style="color: #d4af37; margin-bottom: 10px;">${m.title}</h3>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+                        <span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">📅 ${m.year}</span>
+                        ${m.runtime ? `<span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">⏱️ ${m.runtime}</span>` : ''}
+                        ${m.rated ? `<span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">🔞 ${m.rated}</span>` : ''}
+                        ${m.rating ? `<span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">⭐ ${m.rating}</span>` : ''}
+                        ${m.rottenTomatoes ? `<span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">🍅 ${m.rottenTomatoes}</span>` : ''}
+                        ${m.metacritic ? `<span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">Ⓜ️ ${m.metacritic}</span>` : ''}
+                    </div>
+
+                    <div style="margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #d4af37; font-weight: 600;">Tür: </span>
+                        <span style="color: #ccc;">${m.genre}</span>
+                    </div>
+
+                    <div style="margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #d4af37; font-weight: 600;">Yönetmen: </span>
+                        <span style="color: #ccc;">${m.director}</span>
+                    </div>
+
+                    ${m.writer ? `
+                    <div style="margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #d4af37; font-weight: 600;">Senarist: </span>
+                        <span style="color: #ccc;">${m.writer}</span>
+                    </div>` : ''}
+
+                    ${m.actors ? `
+                    <div style="margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #d4af37; font-weight: 600;">🎭 Oyuncular: </span>
+                        <span style="color: #ccc;">${m.actors}</span>
+                    </div>` : ''}
+
+                    <div style="margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #d4af37; font-weight: 600;">Konusu: </span>
+                        <span style="color: #ccc; line-height: 1.4;">${m.plot}</span>
+                    </div>
+
+                    ${m.awards ? `
+                    <div style="margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #d4af37; font-weight: 600;">🏆 Ödüller: </span>
+                        <span style="color: #ccc;">${m.awards}</span>
+                    </div>` : ''}
+
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.8em; color: #888;">
+                        ${m.country ? `<span>🌍 ${m.country}</span>` : ''}
+                        ${m.language ? `<span>🗣️ ${m.language}</span>` : ''}
+                        ${m.released ? `<span>🎬 Vizyon: ${m.released}</span>` : ''}
+                        ${m.boxoffice ? `<span>💰 ${m.boxoffice}</span>` : ''}
+                    </div>
+                </div>
+            `;
         }
 
         // Film Ekleme
@@ -460,6 +563,7 @@
                 boxoffice: movieForm.dataset.boxoffice || '',
                 rottenTomatoes: movieForm.dataset.rottenTomatoes || '',
                 metacritic: movieForm.dataset.metacritic || '',
+                type: movieForm.dataset.type || 'movie',
                 watched: false,
                 dateAdded: new Date().toISOString()
             };
@@ -962,6 +1066,9 @@
         }
 
         async function quickAddFromRecommendation(imdbID) {
+            // Not: recommendPanel'i gizlemiyoruz, arkada açık kalıyor.
+            // Modal kapatıldığında (Kapat butonu veya geri tuşu ile) kullanıcı
+            // otomatik olarak öneri listesine geri dönmüş olacak.
             openModal();
             await selectMovie(imdbID);
         }
@@ -975,6 +1082,9 @@
         // Modal Yönetimi
         function openModal() {
             movieForm.reset();
+            document.getElementById('moviePreviewArea').innerHTML = '';
+            document.getElementById('movieNameTRGroup').style.display = 'none';
+            document.getElementById('myRatingGroup').style.display = 'none';
             modal.classList.add('active');
             document.getElementById('movieSearch').focus();
             pushUiState(closeModal);
@@ -983,6 +1093,9 @@
         function closeModal(fromHistory) {
             modal.classList.remove('active');
             movieForm.reset();
+            document.getElementById('moviePreviewArea').innerHTML = '';
+            document.getElementById('movieNameTRGroup').style.display = 'none';
+            document.getElementById('myRatingGroup').style.display = 'none';
             searchSuggestions.classList.remove('active');
             delete movieForm.dataset.posterUrl;
             delete movieForm.dataset.actors;
@@ -996,6 +1109,7 @@
             delete movieForm.dataset.boxoffice;
             delete movieForm.dataset.rottenTomatoes;
             delete movieForm.dataset.metacritic;
+            delete movieForm.dataset.type;
             if (!fromHistory) popUiStateIfMatch(closeModal);
         }
 
