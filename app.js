@@ -70,6 +70,40 @@
         let appsScriptUrl = 'https://script.google.com/macros/s/AKfycbzl2Xw5QEVQkd9kM5nvU8ovWwH1WHuMxRkvkn1b2oqGzg3MLW4ciQARD7DLZ10ZhrMbvw/exec';
 
         const OMDB_API = 'c3201f93';
+
+        // ============ GERİ TUŞU (ANDROID) YÖNETİMİ ============
+        // PWA olarak yüklendiğinde, açık panel/modal varken geri tuşuna basınca
+        // uygulamadan çıkmak yerine önce o panel/modalı kapatmasını sağlar.
+        let uiStack = []; // Açık olan panel/modalların kapatma fonksiyonlarını tutar
+
+        function pushUiState(closeFn) {
+            uiStack.push(closeFn);
+            history.pushState({ uiLayer: uiStack.length }, '');
+        }
+
+        function popUiStateIfMatch(closeFn) {
+            // Kullanıcı kapatma butonuna manuel tıkladığında da history'yi senkron tutmak için
+            const idx = uiStack.lastIndexOf(closeFn);
+            if (idx !== -1) {
+                uiStack.splice(idx, 1);
+                if (history.state && history.state.uiLayer) {
+                    history.back();
+                }
+            }
+        }
+
+        // Sadece stack'ten çıkar, history.back() ÇAĞIRMAZ (başka bir UI hemen açılacaksa kullanılır)
+        function removeFromUiStackSilently(closeFn) {
+            const idx = uiStack.lastIndexOf(closeFn);
+            if (idx !== -1) uiStack.splice(idx, 1);
+        }
+
+        window.addEventListener('popstate', () => {
+            if (uiStack.length > 0) {
+                const closeFn = uiStack.pop();
+                closeFn(true); // true: history'den çağrıldığını belirtir, tekrar pushState yapmasın
+            }
+        });
         const GEMINI_API_KEY = 'AIzaSyDjvVmA4Y0pj0eYyp-5ly4zr7zPG2KEaug';
 
         // Gemini API'ye basit bir metin sorusu gönderip yanıtı döndürür
@@ -207,10 +241,17 @@
         function showMovieListPanel(filterValue, title) {
             currentFilter = filterValue;
             statsPanel.style.display = 'none';
+            recommendPanel.style.display = 'none';
             movieListPanel.style.display = 'block';
             panelTitle.textContent = title;
             renderMovies();
             movieListPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            pushUiState(closeMovieListPanel);
+        }
+
+        function closeMovieListPanel(fromHistory) {
+            movieListPanel.style.display = 'none';
+            if (!fromHistory) popUiStateIfMatch(closeMovieListPanel);
         }
 
         document.getElementById('statTotal').addEventListener('click', () => showMovieListPanel('all', '🎬 Tüm Filmler'));
@@ -617,6 +658,7 @@
         // İzleme İstatistik Paneli (tür bazlı kırılım)
         function showWatchStatsPanel() {
             movieListPanel.style.display = 'none';
+            recommendPanel.style.display = 'none';
             statsPanel.style.display = 'block';
 
             const total = movies.length;
@@ -713,6 +755,7 @@
             `;
 
             statsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            pushUiState(closeStatsPanel);
         }
 
         // Tür dağılımı için basit bir SVG pasta grafik oluşturma
@@ -766,18 +809,21 @@
             `;
         }
 
-        function closeStatsPanel() {
+        function closeStatsPanel(fromHistory) {
             statsPanel.style.display = 'none';
             statsPanel.innerHTML = '';
+            if (!fromHistory) popUiStateIfMatch(closeStatsPanel);
         }
 
         // ============ ÖNERİ SİSTEMİ (Bana Öner) ============
         const recommendPanel = document.getElementById('recommendPanel');
 
         async function showRecommendations() {
+            const wasAlreadyOpen = recommendPanel.style.display === 'block';
             movieListPanel.style.display = 'none';
             statsPanel.style.display = 'none';
             recommendPanel.style.display = 'block';
+            if (!wasAlreadyOpen) pushUiState(closeRecommendPanel);
 
             recommendPanel.innerHTML = `
                 <div style="background: #2a2a2a; border-radius: 10px; padding: 25px; text-align: center;">
@@ -920,9 +966,10 @@
             await selectMovie(imdbID);
         }
 
-        function closeRecommendPanel() {
+        function closeRecommendPanel(fromHistory) {
             recommendPanel.style.display = 'none';
             recommendPanel.innerHTML = '';
+            if (!fromHistory) popUiStateIfMatch(closeRecommendPanel);
         }
 
         // Modal Yönetimi
@@ -930,9 +977,10 @@
             movieForm.reset();
             modal.classList.add('active');
             document.getElementById('movieSearch').focus();
+            pushUiState(closeModal);
         }
 
-        function closeModal() {
+        function closeModal(fromHistory) {
             modal.classList.remove('active');
             movieForm.reset();
             searchSuggestions.classList.remove('active');
@@ -948,6 +996,7 @@
             delete movieForm.dataset.boxoffice;
             delete movieForm.dataset.rottenTomatoes;
             delete movieForm.dataset.metacritic;
+            if (!fromHistory) popUiStateIfMatch(closeModal);
         }
 
         // Film Detay Modalı
@@ -1037,10 +1086,22 @@
             `;
 
             detailModal.classList.add('active');
+            pushUiState(closeDetailModal);
         }
 
-        function closeDetailModal() {
+        function closeDetailModal(fromHistory) {
             detailModal.classList.remove('active');
+            if (!fromHistory) popUiStateIfMatch(closeDetailModal);
+        }
+
+        // Detay modalından "Ekle" butonuna basılınca: modalı sessizce kapat (history geri gitmeden)
+        // ve hemen ardından Film Ekle modalını aç. Bu, history.back() ile pushState'in
+        // aynı anda çakışmasını önler.
+        function closeDetailModalThenAdd(imdbID) {
+            detailModal.classList.remove('active');
+            removeFromUiStackSilently(closeDetailModal);
+            openModal();
+            selectMovie(imdbID);
         }
 
         // Aynı yönetmenin diğer filmlerini OMDb'de arayıp gösterme
@@ -1094,7 +1155,7 @@
                         ${results.map(m => `
                             <div style="display: flex; gap: 10px; align-items: center; background: #1a1a1a; border-radius: 6px; padding: 8px; margin-bottom: 6px;">
                                 <span style="flex: 1; font-size: 0.9em; color: #ccc;">${m.Title} (${m.Year}) ${m.imdbRating !== 'N/A' ? '⭐' + m.imdbRating : ''}</span>
-                                <button class="modal-btn primary" style="flex: 0 0 auto; padding: 4px 10px; font-size: 0.8em;" onclick="closeDetailModal(); openModal(); selectMovie('${m.imdbID}');">Ekle</button>
+                                <button class="modal-btn primary" style="flex: 0 0 auto; padding: 4px 10px; font-size: 0.8em;" onclick="closeDetailModalThenAdd('${m.imdbID}')">Ekle</button>
                             </div>
                         `).join('')}
                     </div>
