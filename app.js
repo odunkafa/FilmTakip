@@ -1200,8 +1200,23 @@
 
             try {
                 const url = appsScriptUrl + '?idToken=' + encodeURIComponent(googleIdToken);
-                const response = await fetch(url, { method: 'GET' });
-                const result = await response.json();
+                const response = await fetch(url, {
+                    method: 'GET',
+                    redirect: 'follow'
+                });
+
+                const rawText = await response.text();
+
+                if (!rawText || rawText.trim().length === 0) {
+                    throw new Error('Drive\'dan boş yanıt geldi (içerik yok)');
+                }
+
+                let result;
+                try {
+                    result = JSON.parse(rawText);
+                } catch (parseErr) {
+                    throw new Error('Yanıt JSON olarak okunamadı: ' + rawText.substring(0, 100));
+                }
 
                 if (!result.success) {
                     throw new Error(result.error || 'Bilinmeyen hata');
