@@ -65,6 +65,7 @@
         // ============ ANA UYGULAMA ============
         // Durum Yönetimi
         let movies = JSON.parse(localStorage.getItem('filmKutuphanesi')) || [];
+        let series = JSON.parse(localStorage.getItem('seriesKutuphanesi')) || [];
         let currentFilter = 'all';
         let searchQuery = '';
         let appsScriptUrl = 'https://script.google.com/macros/s/AKfycbzl2Xw5QEVQkd9kM5nvU8ovWwH1WHuMxRkvkn1b2oqGzg3MLW4ciQARD7DLZ10ZhrMbvw/exec';
@@ -200,7 +201,7 @@
         ].filter(m => m.genre); // yer tutucuları temizle
 
         // DOM Elementleri
-        const addMovieBtn = document.querySelector('.add-movie-btn');
+        const addMovieBtn = document.getElementById('addMovieBtn');
         const modal = document.getElementById('modal');
         const closeModalBtn = document.getElementById('closeModal');
         const movieForm = document.getElementById('movieForm');
@@ -218,12 +219,34 @@
         const panelTitle = document.getElementById('panelTitle');
         const movieImdbUrlInput = document.getElementById('movieImdbUrl');
 
+        // Dizi DOM Elementleri
+        const addSeriesBtn = document.getElementById('addSeriesBtn');
+        const seriesModal = document.getElementById('seriesModal');
+        const closeSeriesModalBtn = document.getElementById('closeSeriesModal');
+        const seriesForm = document.getElementById('seriesForm');
+        const seriesSearchInput = document.getElementById('seriesSearch');
+        const seriesSearchSuggestions = document.getElementById('seriesSearchSuggestions');
+        const seriesPreviewArea = document.getElementById('seriesPreviewArea');
+        const seriesSaveBtn = document.getElementById('seriesSaveBtn');
+        const seriesListPanel = document.getElementById('seriesListPanel');
+        const seriesGrid = document.getElementById('seriesGrid');
+        const seriesEmptyState = document.getElementById('seriesEmptyState');
+        const seriesPanelTitle = document.getElementById('seriesPanelTitle');
+        const seriesDetailModal = document.getElementById('seriesDetailModal');
+        const seriesDetailModalContent = document.getElementById('seriesDetailModalContent');
+
         // Sayfa yüklendiğinde
         appsScriptInput.value = appsScriptUrl;
 
         // Event Listeners
         addMovieBtn.addEventListener('click', () => openModal());
         document.getElementById('recommendBtn').addEventListener('click', () => showRecommendations());
+        addSeriesBtn.addEventListener('click', () => openSeriesModal());
+        closeSeriesModalBtn.addEventListener('click', () => closeSeriesModal());
+        seriesForm.addEventListener('submit', (e) => handleAddSeries(e));
+        seriesModal.addEventListener('click', (e) => {
+            if (e.target === seriesModal) closeSeriesModal();
+        });
         closeModalBtn.addEventListener('click', () => closeModal());
         movieForm.addEventListener('submit', (e) => handleAddMovie(e));
         searchInput.addEventListener('input', (e) => {
@@ -259,6 +282,9 @@
         document.getElementById('statWatched').addEventListener('click', () => showMovieListPanel('watched', '✓ İzlenen Filmler'));
         document.getElementById('statPending').addEventListener('click', () => showMovieListPanel('pending', '⏳ İzlenecek Filmler'));
         document.getElementById('statPercentage').addEventListener('click', () => showWatchStatsPanel());
+        document.getElementById('statSeriesTotal').addEventListener('click', () => showSeriesListPanel('all', '📺 Tüm Diziler'));
+        document.getElementById('statSeriesInProgress').addEventListener('click', () => showSeriesListPanel('inprogress', '▶️ İzlenmekte Olan Diziler'));
+        document.getElementById('statSeriesCompleted').addEventListener('click', () => showSeriesListPanel('completed', '✓ Tamamlanan Diziler'));
 
         // Apps Script URL Kaydet (Tarayıcı Console'dan çağırılacak)
         function saveAppsScriptUrl(url) {
@@ -526,7 +552,8 @@
         // Film Ekleme
         function handleAddMovie(e) {
             e.preventDefault();
-            
+
+
             const name = document.getElementById('movieName').value;
             const nameTR = document.getElementById('movieNameTR').value;
             const year = document.getElementById('movieYear').value;
@@ -1303,6 +1330,10 @@
             localStorage.setItem('filmKutuphanesi', JSON.stringify(movies));
         }
 
+        function saveSeries() {
+            localStorage.setItem('seriesKutuphanesi', JSON.stringify(series));
+        }
+
         // Google Drive'a Senkronize Et
         async function syncMoviesToDrive() {
             if (!appsScriptUrl || !googleIdToken) return;
@@ -1363,6 +1394,7 @@
         async function initAppAfterLogin() {
             renderMovies();
             updateStats();
+            renderSeriesStats();
             await loadMoviesFromDrive();
         }
 
@@ -1374,10 +1406,17 @@
             syncText.textContent = 'Drive\'dan yükleniyor...';
 
             try {
-                const url = appsScriptUrl + '?idToken=' + encodeURIComponent(googleIdToken);
-                const response = await fetch(url, {
-                    method: 'GET',
-                    redirect: 'follow'
+                // ÖNEMLİ: Token'ı GET/URL parametresi olarak DEĞİL, POST body'sinde gönderiyoruz.
+                // Google ID token'ları çok uzun (1000+ karakter) olduğundan URL'ye eklenince
+                // kesilebilir/bozulabilir ve "invalid_token" hatasına yol açabilir.
+                // POST body'sinde uzunluk sınırı yoktur, bu yöntem güvenilirdir.
+                const response = await fetch(appsScriptUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        idToken: googleIdToken,
+                        action: 'load'
+                    })
                 });
 
                 const rawText = await response.text();
@@ -1419,6 +1458,17 @@
                 renderMovies();
                 updateStats();
 
+                // Dizi verisini de işle (aynı güvenlik mantığıyla)
+                if (Array.isArray(result.seriesData)) {
+                    if (result.seriesData.length === 0 && series.length > 0) {
+                        console.warn('Drive boş dizi listesi döndürdü ama yerelde ' + series.length + ' dizi var. Yerel veri korunuyor.');
+                    } else {
+                        series = result.seriesData;
+                        saveSeries();
+                        renderSeriesStats();
+                    }
+                }
+
                 syncIndicator.classList.remove('syncing', 'error');
                 syncText.textContent = 'Senkronizasyon aktif';
             } catch (error) {
@@ -1440,6 +1490,469 @@
             }, 100);
         });
 
+        // GÜVENLİK: Sayfa arka plandan öne geldiğinde (kullanıcı sekmeye/uygulamaya geri döndüğünde),
+        // otomatik olarak Drive'dan taze veri çek. Bu, uzun süre arka planda açık kalmış bir
+        // sekmenin/cihazın bayat veriyle senkronizasyon yaparak güncel veriyi ezmesini önler.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && googleIdToken) {
+                console.log('Sayfa öne geldi, Drive\'dan taze veri çekiliyor...');
+                loadMoviesFromDrive();
+            }
+        });
+
+        let seriesSearchTimeout;
+        let selectedSeriesData = null; // OMDb'den seçilen dizinin tam verisi (kaydetmeden önce ön bellek)
+
+        seriesSearchInput.addEventListener('input', (e) => {
+            clearTimeout(seriesSearchTimeout);
+            const query = e.target.value.trim();
+
+            if (query.length < 2) {
+                seriesSearchSuggestions.classList.remove('active');
+                return;
+            }
+
+            seriesSearchTimeout = setTimeout(() => {
+                searchSeries(query);
+            }, 300);
+        });
+
+        async function searchSeries(query) {
+            try {
+                seriesSearchSuggestions.innerHTML = '<div style="padding: 15px; text-align: center;"><div class="loading-spinner"></div></div>';
+
+                const response = await fetch(
+                    `https://www.omdbapi.com/?s=${encodeURIComponent(query)}&type=series&apikey=${OMDB_API}`
+                );
+                const data = await response.json();
+
+                if (data.Search) {
+                    seriesSearchSuggestions.innerHTML = data.Search.slice(0, 8).map(s => `
+                        <div class="suggestion-item" onclick="selectSeries('${s.imdbID}')">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600;">${s.Title}</div>
+                                <div style="font-size: 0.8em; color: #999;">${s.Year}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                    seriesSearchSuggestions.classList.add('active');
+                } else {
+                    seriesSearchSuggestions.innerHTML = '<div style="padding: 15px; text-align: center; color: #999;">Dizi bulunamadı</div>';
+                    seriesSearchSuggestions.classList.add('active');
+                }
+            } catch (error) {
+                console.error('Dizi arama hatası:', error);
+                seriesSearchSuggestions.innerHTML = '<div style="padding: 15px; text-align: center; color: #ff5576;">Hata oluştu</div>';
+                seriesSearchSuggestions.classList.add('active');
+            }
+        }
+
+        async function selectSeries(imdbID) {
+            try {
+                seriesSearchSuggestions.classList.remove('active');
+                seriesSearchInput.value = 'Yükleniyor...';
+                seriesSaveBtn.disabled = true;
+
+                seriesPreviewArea.innerHTML = `
+                    <div style="text-align: center; padding: 20px;">
+                        <div class="loading-spinner"></div>
+                        <p style="color: #999; font-size: 0.85em; margin-top: 8px;">Dizi bilgileri ve sezonlar yükleniyor...</p>
+                    </div>
+                `;
+
+                // 1. Dizinin genel bilgilerini al
+                const response = await fetch(`https://www.omdbapi.com/?i=${imdbID}&apikey=${OMDB_API}&plot=full`);
+                const show = await response.json();
+
+                if (show.Response === 'False') {
+                    showToast('Dizi bilgileri yüklenemedi');
+                    seriesSearchInput.value = '';
+                    return;
+                }
+
+                const totalSeasons = parseInt(show.totalSeasons) || 0;
+
+                // 2. Her sezonu OMDb'den çek (sırayla, paralel değil - API'yi aşırı yüklememek için)
+                const seasons = [];
+                for (let s = 1; s <= totalSeasons; s++) {
+                    try {
+                        const seasonResponse = await fetch(`https://www.omdbapi.com/?i=${imdbID}&Season=${s}&apikey=${OMDB_API}`);
+                        const seasonData = await seasonResponse.json();
+
+                        if (seasonData.Response !== 'False' && Array.isArray(seasonData.Episodes)) {
+                            seasons.push({
+                                seasonNumber: s,
+                                episodes: seasonData.Episodes.map(ep => ({
+                                    episodeNumber: parseInt(ep.Episode) || 0,
+                                    title: ep.Title || '',
+                                    released: ep.Released || '',
+                                    watched: false
+                                }))
+                            });
+                        }
+
+                        // Yükleme ilerlemesini göster
+                        seriesPreviewArea.innerHTML = `
+                            <div style="text-align: center; padding: 20px;">
+                                <div class="loading-spinner"></div>
+                                <p style="color: #999; font-size: 0.85em; margin-top: 8px;">Sezon ${s}/${totalSeasons} yükleniyor...</p>
+                            </div>
+                        `;
+                    } catch (e) {
+                        console.error('Sezon ' + s + ' yüklenemedi:', e);
+                    }
+                }
+
+                // Çeviri (sadece tür, konu, yönetmen/yaratıcı)
+                const [genreTR, plotTR] = await Promise.all([
+                    translateText(show.Genre),
+                    translateText(show.Plot)
+                ]);
+
+                selectedSeriesData = {
+                    imdbID: show.imdbID,
+                    name: show.Title,
+                    nameTR: show.Title,
+                    year: show.Year,
+                    genre: show.Genre !== 'N/A' ? genreTR : 'Belirtilmemiş',
+                    plot: show.Plot !== 'N/A' ? plotTR : 'Açıklama yok',
+                    rating: show.imdbRating !== 'N/A' ? show.imdbRating : '',
+                    posterUrl: show.Poster !== 'N/A' ? show.Poster : '',
+                    totalSeasons: totalSeasons,
+                    seasons: seasons,
+                    dateAdded: new Date().toISOString()
+                };
+
+                seriesSearchInput.value = show.Title;
+                document.getElementById('seriesNameTR').value = show.Title;
+                document.getElementById('seriesNameTRGroup').style.display = 'block';
+                seriesSaveBtn.disabled = false;
+
+                renderSeriesPreview(selectedSeriesData);
+                showToast('Dizi bilgileri yüklendi! ✓');
+
+            } catch (error) {
+                console.error('Dizi seçme hatası:', error);
+                showToast('Dizi bilgileri yüklenemedi');
+            }
+        }
+
+        function renderSeriesPreview(s) {
+            const totalEpisodes = s.seasons.reduce((sum, season) => sum + season.episodes.length, 0);
+
+            seriesPreviewArea.innerHTML = `
+                <div style="background: #1a1a1a; border-radius: 10px; padding: 18px; margin-bottom: 15px; border: 1px solid #333;">
+                    <div style="text-align: center; margin-bottom: 12px;">
+                        <div style="width: 100%; max-height: 260px; border-radius: 8px; overflow: hidden; background: #2a2a2a; display: flex; align-items: center; justify-content: center;">
+                            ${s.posterUrl
+                                ? `<img src="${s.posterUrl}" alt="${s.name}" style="width: 100%; object-fit: contain; max-height: 260px;">`
+                                : `<span style="font-size: 3em; padding: 50px 0;">📺</span>`
+                            }
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 8px;">
+                        <span style="background:#9b7ff020; color:#9b7ff0; padding:4px 10px; border-radius:6px; font-size:0.8em; font-weight:600;">📺 Dizi</span>
+                    </div>
+                    <h3 style="color: #9b7ff0; margin-bottom: 10px;">${s.name}</h3>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+                        <span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">📅 ${s.year}</span>
+                        ${s.rating ? `<span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">⭐ ${s.rating}</span>` : ''}
+                        <span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">📦 ${s.totalSeasons} Sezon</span>
+                        <span style="background: #2a2a2a; padding: 4px 10px; border-radius: 6px; font-size: 0.85em;">🎞️ ${totalEpisodes} Bölüm</span>
+                    </div>
+
+                    <div style="margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #9b7ff0; font-weight: 600;">Tür: </span>
+                        <span style="color: #ccc;">${s.genre}</span>
+                    </div>
+
+                    <div style="margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #9b7ff0; font-weight: 600;">Konusu: </span>
+                        <span style="color: #ccc; line-height: 1.4;">${s.plot}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleAddSeries(e) {
+            e.preventDefault();
+
+            if (!selectedSeriesData) {
+                showToast('Lütfen bir dizi seçin');
+                return;
+            }
+
+            const nameTR = document.getElementById('seriesNameTR').value;
+
+            const newSeries = {
+                id: Date.now(),
+                ...selectedSeriesData,
+                nameTR: (nameTR || selectedSeriesData.name).trim()
+            };
+
+            series.push(newSeries);
+            saveSeries();
+            closeSeriesModal();
+            renderSeriesStats();
+            syncSeriesToDrive();
+            showToast('Dizi eklendi! 📺');
+        }
+
+        function openSeriesModal() {
+            seriesForm.reset();
+            seriesPreviewArea.innerHTML = '';
+            document.getElementById('seriesNameTRGroup').style.display = 'none';
+            seriesSaveBtn.disabled = true;
+            selectedSeriesData = null;
+            seriesModal.classList.add('active');
+            seriesSearchInput.focus();
+            pushUiState(closeSeriesModal);
+        }
+
+        function closeSeriesModal(fromHistory) {
+            seriesModal.classList.remove('active');
+            seriesForm.reset();
+            seriesPreviewArea.innerHTML = '';
+            seriesSearchSuggestions.classList.remove('active');
+            selectedSeriesData = null;
+            if (!fromHistory) popUiStateIfMatch(closeSeriesModal);
+        }
+
+        // Dizi istatistiklerini güncelleme (Toplam / İzlenmekte / Tamamlanan)
+        function renderSeriesStats() {
+            const total = series.length;
+            let inProgress = 0;
+            let completed = 0;
+
+            series.forEach(s => {
+                const totalEp = s.seasons.reduce((sum, season) => sum + season.episodes.length, 0);
+                const watchedEp = s.seasons.reduce((sum, season) => sum + season.episodes.filter(ep => ep.watched).length, 0);
+
+                if (totalEp > 0 && watchedEp === totalEp) {
+                    completed++;
+                } else if (watchedEp > 0) {
+                    inProgress++;
+                }
+            });
+
+            document.getElementById('totalSeries').textContent = total;
+            document.getElementById('inProgressSeries').textContent = inProgress;
+            document.getElementById('completedSeries').textContent = completed;
+        }
+
+        // Dizi Listesi Paneli
+        let currentSeriesFilter = 'all';
+
+        function showSeriesListPanel(filterValue, title) {
+            currentSeriesFilter = filterValue;
+            movieListPanel.style.display = 'none';
+            statsPanel.style.display = 'none';
+            recommendPanel.style.display = 'none';
+            seriesListPanel.style.display = 'block';
+            seriesPanelTitle.textContent = title;
+            renderSeriesList();
+            seriesListPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            pushUiState(closeSeriesListPanel);
+        }
+
+        function closeSeriesListPanel(fromHistory) {
+            seriesListPanel.style.display = 'none';
+            if (!fromHistory) popUiStateIfMatch(closeSeriesListPanel);
+        }
+
+        function getSeriesProgress(s) {
+            const totalEp = s.seasons.reduce((sum, season) => sum + season.episodes.length, 0);
+            const watchedEp = s.seasons.reduce((sum, season) => sum + season.episodes.filter(ep => ep.watched).length, 0);
+            return { totalEp, watchedEp };
+        }
+
+        function getCurrentSeasonEpisode(s) {
+            // Henüz tamamlanmamış ilk sezon/bölümü bulur ("nerede kaldım" göstergesi)
+            for (const season of s.seasons) {
+                const unwatchedEp = season.episodes.find(ep => !ep.watched);
+                if (unwatchedEp) {
+                    return { season: season.seasonNumber, episode: unwatchedEp.episodeNumber };
+                }
+            }
+            return null; // Tüm bölümler izlenmiş
+        }
+
+        function renderSeriesList() {
+            const filtered = series.filter(s => {
+                const { totalEp, watchedEp } = getSeriesProgress(s);
+                if (currentSeriesFilter === 'completed') return totalEp > 0 && watchedEp === totalEp;
+                if (currentSeriesFilter === 'inprogress') return watchedEp > 0 && watchedEp < totalEp;
+                return true; // 'all'
+            });
+
+            if (filtered.length === 0) {
+                seriesGrid.innerHTML = '';
+                seriesEmptyState.style.display = 'block';
+                return;
+            }
+
+            seriesEmptyState.style.display = 'none';
+
+            seriesGrid.innerHTML = filtered.map(s => {
+                const { totalEp, watchedEp } = getSeriesProgress(s);
+                const current = getCurrentSeasonEpisode(s);
+                const progressText = current
+                    ? `Sezon ${current.season}, Bölüm ${current.episode}`
+                    : (totalEp > 0 ? '✓ Tamamlandı' : 'Bölüm bilgisi yok');
+
+                return `
+                    <div class="movie-card" onclick="openSeriesDetailModal(${s.id})">
+                        <div class="movie-poster">
+                            ${s.posterUrl ? `<img src="${s.posterUrl}" alt="${s.name}">` : '<span style="font-size: 2em;">📺</span>'}
+                        </div>
+                        <div class="movie-info">
+                            <div class="movie-title">${s.nameTR || s.name}</div>
+                            <div class="movie-meta">
+                                <span>${s.year}</span>
+                                ${s.rating ? `<span>⭐ ${s.rating}</span>` : ''}
+                            </div>
+                            <div class="movie-genre" style="background: #2a1a3a; color: #9b7ff0;">${progressText}</div>
+                            <div style="background: #1a1a1a; border-radius: 6px; height: 6px; overflow: hidden; margin-top: 8px;">
+                                <div style="background: linear-gradient(135deg, #9b7ff0, #6a4fd4); height: 100%; width: ${totalEp > 0 ? Math.round((watchedEp/totalEp)*100) : 0}%;"></div>
+                            </div>
+                            <div style="font-size: 0.75em; color: #999; margin-top: 4px; text-align: right;">${watchedEp}/${totalEp} bölüm</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function deleteSeries(id) {
+            if (confirm('Bu diziyi silmek istediğinize emin misiniz?')) {
+                series = series.filter(s => s.id !== id);
+                saveSeries();
+                renderSeriesStats();
+                closeSeriesDetailModal();
+                renderSeriesList();
+                syncSeriesToDrive();
+                showToast('Dizi silindi');
+            }
+        }
+
+        // Dizi Detay Modalı - Sezon/Bölüm Takibi
+        function openSeriesDetailModal(id) {
+            const s = series.find(x => x.id === id);
+            if (!s) return;
+            renderSeriesDetailModal(s);
+            seriesDetailModal.classList.add('active');
+            pushUiState(closeSeriesDetailModal);
+        }
+
+        function closeSeriesDetailModal(fromHistory) {
+            seriesDetailModal.classList.remove('active');
+            if (!fromHistory) popUiStateIfMatch(closeSeriesDetailModal);
+        }
+
+        function renderSeriesDetailModal(s) {
+            const { totalEp, watchedEp } = getSeriesProgress(s);
+            const percentage = totalEp > 0 ? Math.round((watchedEp / totalEp) * 100) : 0;
+
+            const seasonsHtml = s.seasons.map(season => {
+                const seasonWatched = season.episodes.filter(ep => ep.watched).length;
+                const episodesHtml = season.episodes.map(ep => `
+                    <div onclick="toggleEpisodeWatched(${s.id}, ${season.seasonNumber}, ${ep.episodeNumber})" style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; cursor: pointer; background: ${ep.watched ? '#9b7ff015' : 'transparent'};">
+                        <span style="width: 24px; height: 24px; border-radius: 50%; border: 2px solid ${ep.watched ? '#9b7ff0' : '#555'}; background: ${ep.watched ? '#9b7ff0' : 'transparent'}; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 0.8em; color: #1a1a1a; font-weight: bold;">
+                            ${ep.watched ? '✓' : ''}
+                        </span>
+                        <span style="flex: 1; font-size: 0.85em; color: ${ep.watched ? '#ccc' : '#999'};">
+                            <strong>${ep.episodeNumber}.</strong> ${ep.title || 'Bölüm ' + ep.episodeNumber}
+                        </span>
+                    </div>
+                `).join('');
+
+                return `
+                    <details style="margin-bottom: 10px; background: #1a1a1a; border-radius: 8px; padding: 10px;" ${seasonWatched < season.episodes.length ? 'open' : ''}>
+                        <summary style="cursor: pointer; color: #9b7ff0; font-weight: 600; padding: 4px;">
+                            Sezon ${season.seasonNumber} (${seasonWatched}/${season.episodes.length})
+                        </summary>
+                        <div style="margin-top: 8px;">${episodesHtml}</div>
+                    </details>
+                `;
+            }).join('');
+
+            seriesDetailModalContent.innerHTML = `
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <div style="width: 100%; max-height: 280px; border-radius: 8px; overflow: hidden; background: #1a1a1a; display: flex; align-items: center; justify-content: center;">
+                        ${s.posterUrl ? `<img src="${s.posterUrl}" alt="${s.name}" style="width: 100%; object-fit: contain; max-height: 280px;">` : '<span style="font-size: 4em; padding: 60px 0;">📺</span>'}
+                    </div>
+                </div>
+                <h2 style="color: #9b7ff0; margin-bottom: 5px;">${s.nameTR || s.name}</h2>
+                ${s.nameTR && s.nameTR !== s.name ? `<p style="color: #999; font-size: 0.9em; margin-bottom: 15px;">Orijinal Adı: ${s.name}</p>` : '<div style="margin-bottom: 15px;"></div>'}
+
+                <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
+                    <span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">📅 ${s.year}</span>
+                    ${s.rating ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">⭐ ${s.rating}</span>` : ''}
+                    <span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">📦 ${s.totalSeasons} Sezon</span>
+                </div>
+
+                <div style="margin-bottom: 15px; padding: 12px; background: #1a1a1a; border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.9em;">
+                        <span style="color: #e0e0e0;">İlerleme</span>
+                        <span style="color: #9b7ff0;">${watchedEp}/${totalEp} bölüm (%${percentage})</span>
+                    </div>
+                    <div style="background: #2a2a2a; border-radius: 6px; height: 10px; overflow: hidden;">
+                        <div style="background: linear-gradient(135deg, #9b7ff0, #6a4fd4); height: 100%; width: ${percentage}%;"></div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9b7ff0; font-weight: 600; margin-bottom: 4px;">Konusu</div>
+                    <div style="color: #ccc; line-height: 1.5; font-size: 0.9em;">${s.plot}</div>
+                </div>
+
+                <h4 style="color: #e0e0e0; margin-bottom: 10px;">Sezonlar ve Bölümler</h4>
+                ${seasonsHtml}
+
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button class="modal-btn secondary" style="flex: 1; background: #5a3a3a; color: #ff8a9a;" onclick="deleteSeries(${s.id})">🗑️ Sil</button>
+                    <button class="modal-btn secondary" style="flex: 1;" onclick="closeSeriesDetailModal()">Kapat</button>
+                </div>
+            `;
+        }
+
+        function toggleEpisodeWatched(seriesId, seasonNumber, episodeNumber) {
+            const s = series.find(x => x.id === seriesId);
+            if (!s) return;
+
+            const season = s.seasons.find(se => se.seasonNumber === seasonNumber);
+            if (!season) return;
+
+            const episode = season.episodes.find(ep => ep.episodeNumber === episodeNumber);
+            if (!episode) return;
+
+            episode.watched = !episode.watched;
+            saveSeries();
+            renderSeriesStats();
+            renderSeriesDetailModal(s); // Modalı yeniden çiz, güncel ilerlemeyi göster
+            syncSeriesToDrive();
+        }
+
+        // Google Drive'a Dizi Senkronizasyonu
+        async function syncSeriesToDrive() {
+            if (!appsScriptUrl || !googleIdToken) return;
+
+            try {
+                await fetch(appsScriptUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        idToken: googleIdToken,
+                        seriesData: series // Apps Script tarafında ayrı bir sheet'e yazılacak
+                    })
+                });
+            } catch (error) {
+                console.error('Dizi senkronizasyon hatası:', error);
+            }
+        }
+
+        // ============ DİZİ SİSTEMİ SONU ============
         // Service Worker kaydı (PWA - "Ana ekrana ekle" desteği için)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
