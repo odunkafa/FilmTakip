@@ -1485,6 +1485,14 @@
         const detailModalContent = document.getElementById('detailModalContent');
 
         function openDetailModal(id) {
+            renderDetailModalContent(id);
+            detailModal.classList.add('active');
+            pushUiState(closeDetailModal);
+        }
+
+        // Sadece içeriği render eder, modalı açmaz/history'e dokunmaz.
+        // Modal zaten açıkken içeriği güncellemek için kullanılır (örn. Türkçe ad kaydedilince).
+        function renderDetailModalContent(id) {
             const movie = movies.find(m => m.id === id);
             if (!movie) return;
 
@@ -1499,6 +1507,14 @@
                 </div>
                 <h2 style="color: #d4af37; margin-bottom: 5px;">${movie.nameTR || movie.name}</h2>
                 ${movie.nameTR && movie.nameTR !== movie.name ? `<p style="color: #999; font-size: 0.9em; margin-bottom: 15px;">Orijinal Adı: ${movie.name}</p>` : '<div style="margin-bottom: 15px;"></div>'}
+
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #d4af37; font-weight: 600; margin-bottom: 6px;">🇹🇷 Türkçe Adı</div>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="detailNameTR" value="${movie.nameTR || movie.name}" placeholder="Türkçe adını yazın" style="flex: 1; padding: 8px 10px; background: #1a1a1a; border: 2px solid #404040; color: #e0e0e0; border-radius: 6px;">
+                        <button class="modal-btn primary" style="flex: 0 0 auto; padding: 8px 16px;" onclick="saveDetailNameTR(${movie.id})">Kaydet</button>
+                    </div>
+                </div>
                 
                 <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
                     <span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">📅 ${movie.year}</span>
@@ -1565,9 +1581,6 @@
 
                 <button class="modal-btn secondary" style="width: 100%;" onclick="closeDetailModal()">Kapat</button>
             `;
-
-            detailModal.classList.add('active');
-            pushUiState(closeDetailModal);
         }
 
         function closeDetailModal(fromHistory) {
@@ -1666,6 +1679,21 @@
             renderMovies();
             syncMoviesToDrive();
             showToast('Puanınız kaydedildi! ⭐');
+        }
+
+        function saveDetailNameTR(id) {
+            const movie = movies.find(m => m.id === id);
+            if (!movie) return;
+
+            const input = document.getElementById('detailNameTR');
+            const value = input.value.trim();
+
+            movie.nameTR = value || movie.name;
+            saveMovies();
+            renderMovies();
+            renderDetailModalContent(id); // Sadece içeriği yenile, modalı yeniden açma/history bozma
+            syncMoviesToDrive();
+            showToast('Türkçe ad kaydedildi! 🇹🇷');
         }
 
         detailModal.addEventListener('click', (e) => {
@@ -1968,6 +1996,26 @@
             }
         }
 
+        function saveSeriesNameTR(id) {
+            const s = series.find(x => x.id === id);
+            if (!s) return;
+
+            const input = document.getElementById('seriesDetailNameTR');
+            const value = input.value.trim();
+
+            s.nameTR = value || s.name;
+            saveSeries();
+
+            if (seriesListPanel.style.display !== 'none') {
+                renderSeriesList();
+            }
+
+            renderSeriesDetailModal(s); // Sadece içeriği yenile, modal zaten açık kalır
+            seriesHasUnsyncedChanges = true; // Dizi senkronizasyon mantığıyla aynı kapanışta-gönder kuralına uysun
+            syncText.textContent = 'Değişiklik var (kapatınca kaydedilecek)';
+            showToast('Türkçe ad kaydedildi! 🇹🇷');
+        }
+
         // Dizi Detay Modalı - Sezon/Bölüm Takibi
         function openSeriesDetailModal(id) {
             const s = series.find(x => x.id === id);
@@ -2055,6 +2103,14 @@
                 </div>
                 <h2 style="color: #9b7ff0; margin-bottom: 5px;">${s.nameTR || s.name}</h2>
                 ${s.nameTR && s.nameTR !== s.name ? `<p style="color: #999; font-size: 0.9em; margin-bottom: 15px;">Orijinal Adı: ${s.name}</p>` : '<div style="margin-bottom: 15px;"></div>'}
+
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9b7ff0; font-weight: 600; margin-bottom: 6px;">🇹🇷 Türkçe Adı</div>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="seriesDetailNameTR" value="${s.nameTR || s.name}" placeholder="Türkçe adını yazın" style="flex: 1; padding: 8px 10px; background: #1a1a1a; border: 2px solid #404040; color: #e0e0e0; border-radius: 6px;">
+                        <button class="modal-btn primary" style="flex: 0 0 auto; padding: 8px 16px; background: #9b7ff0;" onclick="saveSeriesNameTR(${s.id})">Kaydet</button>
+                    </div>
+                </div>
 
                 <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
                     <span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">📅 ${s.year}</span>
