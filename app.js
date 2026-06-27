@@ -1192,6 +1192,18 @@
             delete movieForm.dataset.seasonsData;
             delete movieForm.dataset.totalSeasons;
             if (!fromHistory) popUiStateIfMatch(closeModal);
+
+            // Eğer bu modal, bir detay ekranındaki "Diğer Filmleri/Dizileri" sonuçlarından
+            // açıldıysa, kapanınca o detay ekranına (ve içindeki sonuçlara) geri dön.
+            if (hiddenDetailModalPending) {
+                hiddenDetailModalPending = false;
+                detailModal.classList.add('active');
+                pushUiState(closeDetailModal);
+            } else if (hiddenSeriesDetailModalPending) {
+                hiddenSeriesDetailModalPending = false;
+                seriesDetailModal.classList.add('active');
+                pushUiState(closeSeriesDetailModal);
+            }
         }
 
         // Film Detay Modalı
@@ -1289,12 +1301,16 @@
             if (!fromHistory) popUiStateIfMatch(closeDetailModal);
         }
 
-        // Detay modalından "Ekle" butonuna basılınca: modalı sessizce kapat (history geri gitmeden)
-        // ve hemen ardından Film Ekle modalını aç. Bu, history.back() ile pushState'in
-        // aynı anda çakışmasını önler.
+        // Detay modalından "Ekle" butonuna basılınca: modalı KAPATMIYORUZ, sadece gizliyoruz
+        // (içeriği DOM'da saklı kalır - örn. "Diğer Filmleri" sonuçları kaybolmaz).
+        // Film Ekle modalı kapatıldığında bu modal otomatik olarak tekrar gösterilir.
+        let hiddenDetailModalPending = false;
+        let hiddenSeriesDetailModalPending = false;
+
         function closeDetailModalThenAdd(imdbID) {
             detailModal.classList.remove('active');
             removeFromUiStackSilently(closeDetailModal);
+            hiddenDetailModalPending = true;
             openModal();
             selectMovie(imdbID);
         }
@@ -1684,11 +1700,12 @@
             if (!fromHistory) popUiStateIfMatch(closeSeriesDetailModal);
         }
 
-        // Dizi detayından "Ekle" butonuna basılınca: modalı sessizce kapat (history geri gitmeden)
-        // ve hemen ardından Film/Dizi Ekle modalını aç.
+        // Dizi detayından "Ekle" butonuna basılınca: modalı KAPATMIYORUZ, sadece gizliyoruz
+        // (içeriği DOM'da saklı kalır). Film Ekle modalı kapatıldığında otomatik geri gösterilir.
         function closeSeriesDetailModalThenAdd(imdbID) {
             seriesDetailModal.classList.remove('active');
             removeFromUiStackSilently(closeSeriesDetailModal);
+            hiddenSeriesDetailModalPending = true;
             openModal();
             selectMovie(imdbID);
         }
