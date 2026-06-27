@@ -106,48 +106,55 @@
                 isClosingFromHistory = false;
             }
         });
-        const GEMINI_API_KEY = 'AIzaSyDjvVmA4Y0pj0eYyp-5ly4zr7zPG2KEaug';
+        let lastGeminiDebugInfo = '';
 
-        // Gemini API'ye basit bir metin sorusu gönderip yanıtı döndürür
+        // Gemini API'ye basit bir metin sorusu gönderip yanıtı döndürür.
+        // GÜVENLİK: İstek doğrudan Gemini'ye değil, Apps Script üzerinden (proxy) gidiyor.
+        // Bu sayede Gemini API key'i tarayıcı kodunda (ve GitHub'da) hiç görünmüyor,
+        // sadece Apps Script'in kendi içinde (sunucu tarafında) saklanıyor.
         async function askGemini(prompt) {
+            if (!appsScriptUrl || !googleIdToken) {
+                lastGeminiDebugInfo = 'Giriş yapılmamış veya Apps Script URL eksik';
+                return null;
+            }
+
             try {
-                const response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-goog-api-key': GEMINI_API_KEY
-                        },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: prompt }] }]
-                        })
-                    }
-                );
+                const response = await fetch(appsScriptUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        idToken: googleIdToken,
+                        action: 'askGemini',
+                        prompt: prompt
+                    })
+                });
 
-                const data = await response.json();
-
-                if (data.error) {
-                    console.error('Gemini API hatası:', data.error);
-                    lastGeminiDebugInfo = 'API Hatası: ' + JSON.stringify(data.error);
+                const rawText = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(rawText);
+                } catch (e) {
+                    lastGeminiDebugInfo = 'Yanıt JSON olarak okunamadı: ' + rawText.substring(0, 200);
                     return null;
                 }
 
-                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (!text) {
-                    lastGeminiDebugInfo = 'Beklenmeyen yanıt yapısı: ' + JSON.stringify(data).substring(0, 300);
+                if (!data.success) {
+                    console.error('Gemini proxy hatası:', data.error);
+                    lastGeminiDebugInfo = data.error || 'Bilinmeyen hata';
+                    return null;
                 }
 
-                return text || null;
+                if (!data.text) {
+                    lastGeminiDebugInfo = 'Beklenmeyen yanıt yapısı (text alanı boş)';
+                }
+
+                return data.text || null;
             } catch (error) {
                 console.error('Gemini çağrı hatası:', error);
                 lastGeminiDebugInfo = 'İstek hatası: ' + error.message;
                 return null;
             }
         }
-
-        let lastGeminiDebugInfo = '';
 
         // Gemini'den film adı listesi isteyip, satır satır ayrıştırır
         async function askGeminiForMovieTitles(prompt, count = 5) {
@@ -162,52 +169,6 @@
                 .filter(line => line.length > 0)
                 .slice(0, count);
         }
-
-        // Öneri sistemi için sabit popüler film havuzu (tür bazlı, IMDb ID ile)
-        // OMDb türe göre listeleme sunmadığı için bu havuzdan filtreleme yapıyoruz
-        const POPULAR_MOVIES_POOL = [
-            { id: 'tt1375666', genre: 'Bilim Kurgu' },        // Inception
-            { id: 'tt0816692', genre: 'Bilim Kurgu' },        // Interstellar
-            { id: 'tt0133093', genre: 'Bilim Kurgu' },        // The Matrix
-            { id: 'tt0468569', genre: 'Aksiyon' },            // The Dark Knight
-            { id: 'tt1345836', genre: 'Aksiyon' },            // The Dark Knight Rises
-            { id: 'tt0848228', genre: 'Aksiyon' },            // The Avengers
-            { id: 'tt4154796', genre: 'Aksiyon' },            // Avengers: Endgame
-            { id: 'tt0109830', genre: 'Drama' },              // Forrest Gump
-            { id: 'tt0111161', genre: 'Drama' },              // Shawshank Redemption
-            { id: 'tt0068646', genre: 'Drama' },               // The Godfather
-            { id: 'tt0137523', genre: 'Drama' },               // Fight Club
-            { id: 'tt0110912', genre: 'Suç' },                 // Pulp Fiction
-            { id: 'tt0114369', genre: 'Suç' },                 // Se7en
-            { id: 'tt0167260', genre: 'Fantastik' },          // LOTR: Return of the King
-            { id: 'tt0120737', genre: 'Fantastik' },          // LOTR: Fellowship
-            { id: 'tt0241527', genre: 'Fantastik' },          // Harry Potter 1
-            { id: 'tt0317248', genre: 'Drama' },               // City of God
-            { id: 'tt0099685', genre: 'Suç' },                 // Goodfellas
-            { id: 'tt0102926', genre: 'Suç' },                 // Silence of the Lambs
-            { id: 'tt0118799', genre: 'Drama' },               // Life is Beautiful
-            { id: 'tt0076759', genre: 'Bilim Kurgu' },        // Star Wars
-            { id: 'tt0080684', genre: 'Bilim Kurgu' },        // Empire Strikes Back
-            { id: 'tt0player', genre: '' },                    // (yanlış id - güvenlik amaçlı yer tutucu, filtrelenir)
-            { id: 'tt0993846', genre: 'Komedi' },              // Wolf of Wall Street
-            { id: 'tt2582802', genre: 'Drama' },               // Whiplash
-            { id: 'tt0407887', genre: 'Suç' },                 // The Departed
-            { id: 'tt0482571', genre: 'Gizem' },               // The Prestige
-            { id: 'tt1853728', genre: 'Western' },             // Django Unchained
-            { id: 'tt0086190', genre: 'Bilim Kurgu' },        // Return of the Jedi
-            { id: 'tt0078748', genre: 'Korku' },               // Alien
-            { id: 'tt0103064', genre: 'Aksiyon' },             // Terminator 2
-            { id: 'tt0364569', genre: 'Korku' },               // Oldboy
-            { id: 'tt0114814', genre: 'Suç' },                 // The Usual Suspects
-            { id: 'tt6751668', genre: 'Drama' },               // Parasite
-            { id: 'tt15398776', genre: 'Aksiyon' },            // Oppenheimer
-            { id: 'tt1160419', genre: 'Bilim Kurgu' },        // Dune
-            { id: 'tt9362722', genre: 'Bilim Kurgu' },        // Dune: Part Two
-            { id: 'tt10872600', genre: 'Aksiyon' },            // Spider-Man: No Way Home
-            { id: 'tt1727824', genre: 'Korku' },               // Bone Tomahawk
-            { id: 'tt0114709', genre: 'Animasyon' },          // Toy Story
-            { id: 'tt2380307', genre: 'Animasyon' },          // Coco
-        ].filter(m => m.genre); // yer tutucuları temizle
 
         // DOM Elementleri
         const addMovieBtn = document.getElementById('addMovieBtn');
@@ -1102,9 +1063,11 @@
             const existingTitles = new Set(movies.map(m => m.name.toLowerCase()));
             let results = [];
             let usedGeminiInfo = null;
+            let recommendationError = null;
 
-            // Gemini'den kişiselleştirilmiş öneri istemeyi dene
-            if (favoriteDirector || favoriteActor || favoriteGenre) {
+            if (!favoriteDirector && !favoriteActor && !favoriteGenre) {
+                recommendationError = 'Henüz izlediğiniz film yok. Öneri alabilmek için önce birkaç film izleyip işaretleyin.';
+            } else {
                 let prompt = 'Bana film önerileri yap. ';
                 if (favoriteDirector) prompt += `En çok izlediğim yönetmen ${favoriteDirector}. `;
                 if (favoriteActor) prompt += `En çok izlediğim oyuncu ${favoriteActor}. `;
@@ -1113,7 +1076,9 @@
 
                 const titles = await askGeminiForMovieTitles(prompt, 6);
 
-                if (titles && titles.length > 0) {
+                if (!titles || titles.length === 0) {
+                    recommendationError = 'Gemini\'den öneri alınamadı: ' + lastGeminiDebugInfo;
+                } else {
                     for (const title of titles) {
                         try {
                             const response = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_API}`);
@@ -1123,39 +1088,19 @@
                             }
                         } catch (e) { /* devam et */ }
                     }
+
                     if (results.length > 0) {
                         usedGeminiInfo = { favoriteDirector, favoriteActor, favoriteGenre };
+                    } else {
+                        recommendationError = 'Gemini öneriler verdi ama hepsi zaten kütüphanenizde veya OMDb\'de bulunamadı. Tekrar deneyin.';
                     }
                 }
             }
 
-            // Gemini başarısız olduysa veya sonuç bulunamadıysa, sabit havuza geri dön
-            if (results.length === 0) {
-                let candidates = POPULAR_MOVIES_POOL;
-                if (favoriteGenre) {
-                    const matching = POPULAR_MOVIES_POOL.filter(m => m.genre === favoriteGenre);
-                    if (matching.length >= 3) candidates = matching;
-                }
-
-                const shuffled = [...candidates].sort(() => Math.random() - 0.5).slice(0, 5);
-
-                for (const candidate of shuffled) {
-                    try {
-                        const response = await fetch(`https://www.omdbapi.com/?i=${candidate.id}&apikey=${OMDB_API}`);
-                        const movie = await response.json();
-                        if (movie.Response !== 'False' && !existingTitles.has(movie.Title.toLowerCase())) {
-                            results.push(movie);
-                        }
-                    } catch (e) {
-                        console.error('Öneri yükleme hatası:', e);
-                    }
-                }
-            }
-
-            renderRecommendations(results, favoriteGenre, usedGeminiInfo);
+            renderRecommendations(results, favoriteGenre, usedGeminiInfo, recommendationError);
         }
 
-        function renderRecommendations(results, favoriteGenre, geminiInfo) {
+        function renderRecommendations(results, favoriteGenre, geminiInfo, recommendationError) {
             let introText;
             if (geminiInfo) {
                 const parts = [];
@@ -1181,7 +1126,7 @@
                     </div>
                     <button class="modal-btn primary" style="flex: 0 0 auto; padding: 8px 14px; font-size: 0.85em;" onclick="quickAddFromRecommendation('${movie.imdbID}')">Ekle</button>
                 </div>
-            `).join('') : '<p style="color: #999; text-align: center;">Şu an öneri bulunamadı, daha fazla film izleyip tekrar deneyin.</p>';
+            `).join('') : `<p style="color: #ff5576; text-align: center; font-size: 0.9em;">${recommendationError || 'Şu an öneri bulunamadı.'}</p>`;
 
             recommendPanel.innerHTML = `
                 <div style="background: #2a2a2a; border-radius: 10px; padding: 25px;">
