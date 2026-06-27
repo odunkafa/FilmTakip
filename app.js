@@ -1014,13 +1014,39 @@
         // ============ ÖNERİ SİSTEMİ (Bana Öner) ============
         const recommendPanel = document.getElementById('recommendPanel');
 
-        async function showRecommendations() {
+        // Ana giriş noktası: "Bana Öner" butonuna basılınca önce mod seçimi gösterilir
+        function showRecommendations() {
             const wasAlreadyOpen = recommendPanel.style.display === 'block';
             movieListPanel.style.display = 'none';
             statsPanel.style.display = 'none';
             recommendPanel.style.display = 'block';
             if (!wasAlreadyOpen) pushUiState(closeRecommendPanel);
 
+            recommendPanel.innerHTML = `
+                <div style="background: #2a2a2a; border-radius: 10px; padding: 25px;">
+                    <h3 style="color: #d4af37; margin-bottom: 10px;">🎯 Nasıl Öneri İstersin?</h3>
+                    <p style="color: #999; margin-bottom: 20px; font-size: 0.9em;">İki farklı şekilde öneri alabilirsiniz:</p>
+
+                    <div onclick="showHistoryBasedRecommendations()" style="background: #1a1a1a; border-radius: 10px; padding: 18px; margin-bottom: 12px; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s;" onmouseover="this.style.borderColor='#d4af37'" onmouseout="this.style.borderColor='transparent'">
+                        <div style="font-size: 1.5em; margin-bottom: 8px;">📊</div>
+                        <div style="font-weight: 600; color: #d4af37; margin-bottom: 4px;">Geçmişime Göre Öner</div>
+                        <div style="font-size: 0.85em; color: #999;">Kütüphanenizdeki film ve dizilerinize bakıp, zevkinize uygun otomatik öneri sunar.</div>
+                    </div>
+
+                    <div onclick="showFilterBasedRecommendations()" style="background: #1a1a1a; border-radius: 10px; padding: 18px; margin-bottom: 15px; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s;" onmouseover="this.style.borderColor='#9b7ff0'" onmouseout="this.style.borderColor='transparent'">
+                        <div style="font-size: 1.5em; margin-bottom: 8px;">🎛️</div>
+                        <div style="font-weight: 600; color: #9b7ff0; margin-bottom: 4px;">Filtreleyerek Bul</div>
+                        <div style="font-size: 0.85em; color: #999;">Tür, ruh hali, dönem gibi etiketler seçip o ana özel bir öneri alın.</div>
+                    </div>
+
+                    <button class="modal-btn secondary" style="width: 100%;" onclick="closeRecommendPanel()">Kapat</button>
+                </div>
+            `;
+            recommendPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // ============ MOD 1: GEÇMİŞE GÖRE ÖNERİ ============
+        async function showHistoryBasedRecommendations() {
             recommendPanel.innerHTML = `
                 <div style="background: #2a2a2a; border-radius: 10px; padding: 25px; text-align: center;">
                     <div class="loading-spinner" style="margin: 20px auto;"></div>
@@ -1029,30 +1055,32 @@
             `;
             recommendPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-            // En çok izlenen tür, yönetmen ve oyuncuyu bul
+            // En çok geçen tür, yönetmen ve oyuncuyu bul - HEM FİLMLER HEM DİZİLER hesaba katılır,
+            // izlenmiş olma şartı yok (kütüphaneye eklenen her şey sayılır)
             const genreCounts = {};
             const directorCounts = {};
             const actorCounts = {};
 
-            movies.forEach(movie => {
-                if (!movie.watched) return;
-
-                if (movie.genre) {
-                    movie.genre.split(',').map(g => g.trim()).filter(Boolean).forEach(g => {
+            const countFromItem = (item) => {
+                if (item.genre) {
+                    item.genre.split(',').map(g => g.trim()).filter(Boolean).forEach(g => {
                         genreCounts[g] = (genreCounts[g] || 0) + 1;
                     });
                 }
-                if (movie.director) {
-                    movie.director.split(',').map(d => d.trim()).filter(Boolean).forEach(d => {
+                if (item.director) {
+                    item.director.split(',').map(d => d.trim()).filter(Boolean).forEach(d => {
                         directorCounts[d] = (directorCounts[d] || 0) + 1;
                     });
                 }
-                if (movie.actors) {
-                    movie.actors.split(',').map(a => a.trim()).filter(Boolean).forEach(a => {
+                if (item.actors) {
+                    item.actors.split(',').map(a => a.trim()).filter(Boolean).forEach(a => {
                         actorCounts[a] = (actorCounts[a] || 0) + 1;
                     });
                 }
-            });
+            };
+
+            movies.forEach(countFromItem);
+            series.forEach(countFromItem);
 
             const sortByCount = (obj) => Object.keys(obj).sort((a, b) => obj[b] - obj[a]);
 
@@ -1060,19 +1088,24 @@
             const favoriteDirector = sortByCount(directorCounts)[0] || null;
             const favoriteActor = sortByCount(actorCounts)[0] || null;
 
-            const existingTitles = new Set(movies.map(m => m.name.toLowerCase()));
+            // Kütüphanedeki (film + dizi) tüm isimler - öneriler bunlarla eşleşirse elenir
+            const existingTitles = new Set([
+                ...movies.map(m => m.name.toLowerCase()),
+                ...series.map(s => s.name.toLowerCase())
+            ]);
+
             let results = [];
             let usedGeminiInfo = null;
             let recommendationError = null;
 
             if (!favoriteDirector && !favoriteActor && !favoriteGenre) {
-                recommendationError = 'Henüz izlediğiniz film yok. Öneri alabilmek için önce birkaç film izleyip işaretleyin.';
+                recommendationError = 'Henüz kütüphanenizde film veya dizi yok. Öneri alabilmek için önce birkaç film/dizi ekleyin.';
             } else {
-                let prompt = 'Bana film önerileri yap. ';
-                if (favoriteDirector) prompt += `En çok izlediğim yönetmen ${favoriteDirector}. `;
-                if (favoriteActor) prompt += `En çok izlediğim oyuncu ${favoriteActor}. `;
+                let prompt = 'Bana film veya dizi önerileri yap. ';
+                if (favoriteDirector) prompt += `En çok karşılaştığım yönetmen/yaratıcı ${favoriteDirector}. `;
+                if (favoriteActor) prompt += `En çok karşılaştığım oyuncu ${favoriteActor}. `;
                 if (favoriteGenre) prompt += `En sevdiğim tür ${favoriteGenre}. `;
-                prompt += 'Bu zevkime uygun, benzer tarzda 6 film öner.';
+                prompt += 'Bu zevkime uygun, benzer tarzda 6 film veya dizi öner (ikisi karışık olabilir).';
 
                 const titles = await askGeminiForMovieTitles(prompt, 6);
 
@@ -1081,10 +1114,11 @@
                 } else {
                     for (const title of titles) {
                         try {
+                            // type filtresi YOK - hem film hem dizi sonucu gelebilir
                             const response = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_API}`);
-                            const movie = await response.json();
-                            if (movie.Response !== 'False' && !existingTitles.has(movie.Title.toLowerCase())) {
-                                results.push(movie);
+                            const item = await response.json();
+                            if (item.Response !== 'False' && !existingTitles.has(item.Title.toLowerCase())) {
+                                results.push(item);
                             }
                         } catch (e) { /* devam et */ }
                     }
@@ -1104,37 +1138,44 @@
             let introText;
             if (geminiInfo) {
                 const parts = [];
-                if (geminiInfo.favoriteDirector) parts.push(`yönetmen <strong style="color:#d4af37;">${geminiInfo.favoriteDirector}</strong>`);
+                if (geminiInfo.favoriteDirector) parts.push(`yönetmen/yaratıcı <strong style="color:#d4af37;">${geminiInfo.favoriteDirector}</strong>`);
                 if (geminiInfo.favoriteActor) parts.push(`oyuncu <strong style="color:#d4af37;">${geminiInfo.favoriteActor}</strong>`);
                 if (geminiInfo.favoriteGenre) parts.push(`<strong style="color:#d4af37;">${geminiInfo.favoriteGenre}</strong> türü`);
-                introText = `✨ Gemini, en çok izlediğiniz ${parts.join(', ')} zevkinize göre bu önerileri hazırladı:`;
+                introText = `✨ Gemini, kütüphanenizde en çok yer alan ${parts.join(', ')} zevkinize göre bu önerileri hazırladı:`;
             } else if (favoriteGenre) {
-                introText = `En çok izlediğiniz tür <strong style="color:#d4af37;">${favoriteGenre}</strong> olduğu için, bu türden öneriler hazırladık:`;
+                introText = `Kütüphanenizde en çok yer alan tür <strong style="color:#d4af37;">${favoriteGenre}</strong> olduğu için, bu türden öneriler hazırladık:`;
             } else {
                 introText = `İşte sizin için bazı öneriler:`;
             }
 
-            const cardsHtml = results.length > 0 ? results.map(movie => `
+            const cardsHtml = results.length > 0 ? results.map(item => {
+                const isSeries = item.Type === 'series';
+                const typeTag = isSeries
+                    ? '<span style="color:#9b7ff0;">📺 Dizi</span>'
+                    : '<span style="color:#d4af37;">🎬 Film</span>';
+                return `
                 <div style="background: #1a1a1a; border-radius: 8px; padding: 15px; margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
                     <div style="width: 60px; height: 85px; flex-shrink: 0; border-radius: 6px; overflow: hidden; background: #2a2a2a; display: flex; align-items: center; justify-content: center;">
-                        ${movie.Poster !== 'N/A' ? `<img src="${movie.Poster}" style="width: 100%; height: 100%; object-fit: cover;">` : '🎬'}
+                        ${item.Poster !== 'N/A' ? `<img src="${item.Poster}" style="width: 100%; height: 100%; object-fit: cover;">` : (isSeries ? '📺' : '🎬')}
                     </div>
                     <div style="flex: 1;">
-                        <div style="font-weight: 600; color: #e0e0e0;">${movie.Title}</div>
-                        <div style="font-size: 0.85em; color: #999; margin: 4px 0;">${movie.Year} · ⭐ ${movie.imdbRating !== 'N/A' ? movie.imdbRating : '?'}</div>
-                        <div style="font-size: 0.8em; color: #777;">${movie.Genre}</div>
+                        <div style="font-weight: 600; color: #e0e0e0;">${item.Title}</div>
+                        <div style="font-size: 0.85em; color: #999; margin: 4px 0;">${item.Year} · ⭐ ${item.imdbRating !== 'N/A' ? item.imdbRating : '?'} · ${typeTag}</div>
+                        <div style="font-size: 0.8em; color: #777;">${item.Genre}</div>
                     </div>
-                    <button class="modal-btn primary" style="flex: 0 0 auto; padding: 8px 14px; font-size: 0.85em;" onclick="quickAddFromRecommendation('${movie.imdbID}')">Ekle</button>
+                    <button class="modal-btn primary" style="flex: 0 0 auto; padding: 8px 14px; font-size: 0.85em;" onclick="quickAddFromRecommendation('${item.imdbID}')">Ekle</button>
                 </div>
-            `).join('') : `<p style="color: #ff5576; text-align: center; font-size: 0.9em;">${recommendationError || 'Şu an öneri bulunamadı.'}</p>`;
+            `;
+            }).join('') : `<p style="color: #ff5576; text-align: center; font-size: 0.9em;">${recommendationError || 'Şu an öneri bulunamadı.'}</p>`;
 
             recommendPanel.innerHTML = `
                 <div style="background: #2a2a2a; border-radius: 10px; padding: 25px;">
-                    <h3 style="color: #d4af37; margin-bottom: 10px;">🎯 Size Özel Öneriler</h3>
+                    <button onclick="showRecommendations()" style="background: none; border: none; color: #999; font-size: 0.85em; cursor: pointer; margin-bottom: 10px; padding: 0;">← Geri</button>
+                    <h3 style="color: #d4af37; margin-bottom: 10px;">📊 Geçmişime Göre Öneriler</h3>
                     <p style="color: #999; margin-bottom: 20px; font-size: 0.9em;">${introText}</p>
                     ${cardsHtml}
                     <div style="display: flex; gap: 10px; margin-top: 15px;">
-                        <button class="modal-btn secondary" style="flex: 1;" onclick="showRecommendations()">🔄 Yeni Öneriler</button>
+                        <button class="modal-btn secondary" style="flex: 1;" onclick="showHistoryBasedRecommendations()">🔄 Yeni Öneriler</button>
                         <button class="modal-btn secondary" style="flex: 1;" onclick="closeRecommendPanel()">Kapat</button>
                     </div>
                 </div>
@@ -1145,6 +1186,7 @@
             // Not: recommendPanel'i gizlemiyoruz, arkada açık kalıyor.
             // Modal kapatıldığında (Kapat butonu veya geri tuşu ile) kullanıcı
             // otomatik olarak öneri listesine geri dönmüş olacak.
+            // selectMovie, gelen öğenin film mi dizi mi olduğunu otomatik algılar.
             openModal();
             await selectMovie(imdbID);
         }
@@ -1153,6 +1195,238 @@
             recommendPanel.style.display = 'none';
             recommendPanel.innerHTML = '';
             if (!fromHistory) popUiStateIfMatch(closeRecommendPanel);
+        }
+
+        // ============ MOD 2: FİLTRELEYEREK BUL ============
+
+        const FILTER_CATEGORIES = {
+            type: {
+                label: '🎬 Film / Dizi',
+                multi: false,
+                options: ['Film', 'Dizi', 'Mini Dizi']
+            },
+            genre: {
+                label: '🎭 Tür',
+                multi: true,
+                options: ['Bilim Kurgu', 'Aksiyon', 'Komedi', 'Romantik', 'Korku', 'Gerilim', 'Drama', 'Macera', 'Fantastik', 'Animasyon', 'Suç', 'Tarihi', 'Belgesel']
+            },
+            mood: {
+                label: '😊 Ruh Hali',
+                multi: true,
+                options: ['Neşeli', 'Hüzünlü', 'Heyecanlı', 'Sakin', 'Gerilimli', 'Düşündürücü', 'Romantik', 'Karanlık']
+            },
+            list: {
+                label: '🏆 Liste / Prestij',
+                multi: true,
+                options: ['Oscar Ödüllü', 'IMDb En İyi 250', 'En Çok İzlenen', 'Eleştirmen Beğenisi Yüksek', 'Az Bilinen Hazineler', 'Yeni Çıkanlar', 'Klasikleşmiş Kült']
+            },
+            origin: {
+                label: '🌐 Köken',
+                multi: false,
+                options: ['Yerli Yapım', 'Yabancı Yapım']
+            },
+            duration: {
+                label: '⏱️ Süre',
+                multi: false,
+                options: ['Kısa (~90 dk altı)', 'Standart (90-150 dk)', 'Uzun (150 dk+)']
+            },
+            era: {
+                label: '📅 Dönem',
+                multi: false,
+                options: ['Klasik (2000 öncesi)', 'Modern (2000-2015)', 'Güncel (2015+)']
+            }
+        };
+
+        let selectedFilters = {}; // { genre: ['Bilim Kurgu', 'Gerilim'], mood: ['Heyecanlı'], ... }
+        let selectedActorFilter = '';
+        let openFilterCategory = null; // Hangi kategori şu an açık (alt etiketleri gösteriliyor)
+
+        function showFilterBasedRecommendations() {
+            selectedFilters = {};
+            selectedActorFilter = '';
+            openFilterCategory = null;
+            renderFilterScreen();
+        }
+
+        function renderFilterScreen() {
+            const categoryButtonsHtml = Object.keys(FILTER_CATEGORIES).map(key => {
+                const cat = FILTER_CATEGORIES[key];
+                const selectedCount = (selectedFilters[key] || []).length;
+                const isOpen = openFilterCategory === key;
+                return `
+                    <button onclick="toggleFilterCategory('${key}')" style="background: ${selectedCount > 0 ? '#9b7ff0' : (isOpen ? '#404040' : '#2a2a2a')}; color: ${selectedCount > 0 ? '#1a1a1a' : '#e0e0e0'}; border: 1px solid #404040; border-radius: 20px; padding: 8px 14px; font-size: 0.85em; cursor: pointer; margin: 4px;">
+                        ${cat.label}${selectedCount > 0 ? ' (' + selectedCount + ')' : ''}
+                    </button>
+                `;
+            }).join('');
+
+            let optionsHtml = '';
+            if (openFilterCategory) {
+                const cat = FILTER_CATEGORIES[openFilterCategory];
+                const currentSelection = selectedFilters[openFilterCategory] || [];
+
+                optionsHtml = `
+                    <div style="background: #1a1a1a; border-radius: 8px; padding: 14px; margin-top: 10px; margin-bottom: 10px;">
+                        <div style="color: #999; font-size: 0.8em; margin-bottom: 10px;">${cat.multi ? 'Birden fazla seçebilirsiniz' : 'Tek seçim yapabilirsiniz'}</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            ${cat.options.map(opt => {
+                                const isSelected = currentSelection.includes(opt);
+                                return `
+                                    <button onclick="toggleFilterOption('${openFilterCategory}', '${opt.replace(/'/g, "\\'")}')" style="background: ${isSelected ? '#d4af37' : '#2a2a2a'}; color: ${isSelected ? '#1a1a1a' : '#ccc'}; border: 1px solid #404040; border-radius: 16px; padding: 6px 12px; font-size: 0.8em; cursor: pointer;">
+                                        ${opt}
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        ${openFilterCategory === 'type' && currentSelection.includes('Dizi') ? `
+                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #333;">
+                                <button onclick="toggleFilterOption('type', 'Mini Dizi')" style="background: ${currentSelection.includes('Mini Dizi') ? '#d4af37' : '#2a2a2a'}; color: ${currentSelection.includes('Mini Dizi') ? '#1a1a1a' : '#ccc'}; border: 1px solid #404040; border-radius: 16px; padding: 6px 12px; font-size: 0.8em; cursor: pointer;">
+                                    Mini Dizi (sınırlı bölümlü)
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            recommendPanel.innerHTML = `
+                <div style="background: #2a2a2a; border-radius: 10px; padding: 25px;">
+                    <button onclick="showRecommendations()" style="background: none; border: none; color: #999; font-size: 0.85em; cursor: pointer; margin-bottom: 10px; padding: 0;">← Geri</button>
+                    <h3 style="color: #9b7ff0; margin-bottom: 10px;">🎛️ Filtreleyerek Bul</h3>
+                    <p style="color: #999; margin-bottom: 15px; font-size: 0.85em;">İstediğiniz etiketleri seçin (hiç seçmezseniz o kategori serbest kalır):</p>
+
+                    <div style="display: flex; flex-wrap: wrap; margin: -4px;">${categoryButtonsHtml}</div>
+                    ${optionsHtml}
+
+                    <div style="margin-top: 15px;">
+                        <label style="color: #999; font-size: 0.8em; display: block; margin-bottom: 6px;">🌟 Belirli bir oyuncu (isteğe bağlı)</label>
+                        <input type="text" id="actorFilterInput" value="${selectedActorFilter}" oninput="selectedActorFilter = this.value" placeholder="Örn: Tom Hanks" style="width: 100%; padding: 8px 10px; background: #1a1a1a; border: 2px solid #404040; color: #e0e0e0; border-radius: 6px; box-sizing: border-box;">
+                    </div>
+
+                    <button class="modal-btn primary" style="width: 100%; margin-top: 18px; background: #9b7ff0;" onclick="runFilterSearch()">🔍 Bul</button>
+                    <button class="modal-btn secondary" style="width: 100%; margin-top: 8px;" onclick="closeRecommendPanel()">Kapat</button>
+                </div>
+            `;
+        }
+
+        function toggleFilterCategory(key) {
+            openFilterCategory = (openFilterCategory === key) ? null : key;
+            renderFilterScreen();
+        }
+
+        function toggleFilterOption(categoryKey, option) {
+            const cat = FILTER_CATEGORIES[categoryKey];
+            if (!selectedFilters[categoryKey]) selectedFilters[categoryKey] = [];
+
+            const list = selectedFilters[categoryKey];
+            const idx = list.indexOf(option);
+
+            if (idx !== -1) {
+                // Zaten seçiliyse, kaldır
+                list.splice(idx, 1);
+            } else {
+                if (cat.multi) {
+                    list.push(option);
+                } else {
+                    // Tekli seçim - öncekini değiştir
+                    selectedFilters[categoryKey] = [option];
+                }
+            }
+
+            if (selectedFilters[categoryKey].length === 0) delete selectedFilters[categoryKey];
+            renderFilterScreen();
+        }
+
+        async function runFilterSearch() {
+            // Seçimlerden Gemini prompt'u oluştur
+            const parts = [];
+
+            if (selectedFilters.type && selectedFilters.type.length > 0) {
+                parts.push(selectedFilters.type.join(' veya ') + ' türünde içerik');
+            } else {
+                parts.push('film veya dizi');
+            }
+            if (selectedFilters.genre) parts.push(selectedFilters.genre.join(', ') + ' türünde');
+            if (selectedFilters.mood) parts.push(selectedFilters.mood.join(', ') + ' bir ruh haline uygun');
+            if (selectedFilters.list) parts.push(selectedFilters.list.join(', ') + ' kategorisine uyan');
+            if (selectedFilters.origin) parts.push(selectedFilters.origin[0] === 'Yerli Yapım' ? 'Türk yapımı' : 'yabancı yapım');
+            if (selectedFilters.duration) parts.push('süre olarak ' + selectedFilters.duration[0]);
+            if (selectedFilters.era) parts.push(selectedFilters.era[0] + ' döneminden');
+            if (selectedActorFilter && selectedActorFilter.trim()) parts.push(selectedActorFilter.trim() + ' oyuncusunun oynadığı');
+
+            const prompt = 'Bana ' + parts.join(', ') + ' 6 öneri ver.';
+
+            recommendPanel.innerHTML = `
+                <div style="background: #2a2a2a; border-radius: 10px; padding: 25px; text-align: center;">
+                    <div class="loading-spinner" style="margin: 20px auto;"></div>
+                    <p style="color: #999;">Gemini seçimlerinize göre arıyor...</p>
+                </div>
+            `;
+            recommendPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            const existingTitles = new Set([
+                ...movies.map(m => m.name.toLowerCase()),
+                ...series.map(s => s.name.toLowerCase())
+            ]);
+
+            const titles = await askGeminiForMovieTitles(prompt, 6);
+            let results = [];
+            let filterError = null;
+
+            if (!titles || titles.length === 0) {
+                filterError = 'Gemini\'den öneri alınamadı: ' + lastGeminiDebugInfo;
+            } else {
+                for (const title of titles) {
+                    try {
+                        const response = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_API}`);
+                        const item = await response.json();
+                        if (item.Response !== 'False' && !existingTitles.has(item.Title.toLowerCase())) {
+                            results.push(item);
+                        }
+                    } catch (e) { /* devam et */ }
+                }
+
+                if (results.length === 0) {
+                    filterError = 'Gemini öneriler verdi ama hepsi zaten kütüphanenizde veya OMDb\'de bulunamadı. Tekrar deneyin.';
+                }
+            }
+
+            renderFilterResults(results, filterError);
+        }
+
+        function renderFilterResults(results, filterError) {
+            const cardsHtml = results.length > 0 ? results.map(item => {
+                const isSeries = item.Type === 'series';
+                const typeTag = isSeries
+                    ? '<span style="color:#9b7ff0;">📺 Dizi</span>'
+                    : '<span style="color:#d4af37;">🎬 Film</span>';
+                return `
+                <div style="background: #1a1a1a; border-radius: 8px; padding: 15px; margin-bottom: 12px; display: flex; gap: 12px; align-items: center;">
+                    <div style="width: 60px; height: 85px; flex-shrink: 0; border-radius: 6px; overflow: hidden; background: #2a2a2a; display: flex; align-items: center; justify-content: center;">
+                        ${item.Poster !== 'N/A' ? `<img src="${item.Poster}" style="width: 100%; height: 100%; object-fit: cover;">` : (isSeries ? '📺' : '🎬')}
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; color: #e0e0e0;">${item.Title}</div>
+                        <div style="font-size: 0.85em; color: #999; margin: 4px 0;">${item.Year} · ⭐ ${item.imdbRating !== 'N/A' ? item.imdbRating : '?'} · ${typeTag}</div>
+                        <div style="font-size: 0.8em; color: #777;">${item.Genre}</div>
+                    </div>
+                    <button class="modal-btn primary" style="flex: 0 0 auto; padding: 8px 14px; font-size: 0.85em;" onclick="quickAddFromRecommendation('${item.imdbID}')">Ekle</button>
+                </div>
+            `;
+            }).join('') : `<p style="color: #ff5576; text-align: center; font-size: 0.9em;">${filterError || 'Şu an öneri bulunamadı.'}</p>`;
+
+            recommendPanel.innerHTML = `
+                <div style="background: #2a2a2a; border-radius: 10px; padding: 25px;">
+                    <button onclick="renderFilterScreen()" style="background: none; border: none; color: #999; font-size: 0.85em; cursor: pointer; margin-bottom: 10px; padding: 0;">← Filtreleri Düzenle</button>
+                    <h3 style="color: #9b7ff0; margin-bottom: 15px;">🎛️ Seçimlerinize Uygun Öneriler</h3>
+                    ${cardsHtml}
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <button class="modal-btn secondary" style="flex: 1;" onclick="runFilterSearch()">🔄 Yeni Öneriler</button>
+                        <button class="modal-btn secondary" style="flex: 1;" onclick="closeRecommendPanel()">Kapat</button>
+                    </div>
+                </div>
+            `;
         }
 
         // Modal Yönetimi
@@ -1731,7 +2005,7 @@
                 `).join('');
 
                 return `
-                    <details style="margin-bottom: 10px; background: #1a1a1a; border-radius: 8px; padding: 10px;" ${seasonWatched < season.episodes.length ? 'open' : ''}>
+                    <details style="margin-bottom: 10px; background: #1a1a1a; border-radius: 8px; padding: 10px;">
                         <summary style="cursor: pointer; color: #9b7ff0; font-weight: 600; padding: 4px;">
                             Sezon ${season.seasonNumber} (${seasonWatched}/${season.episodes.length})
                         </summary>
