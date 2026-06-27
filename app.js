@@ -1365,6 +1365,9 @@
                         <div style="color: #999; font-size: 0.8em; margin-bottom: 8px;">✨ Gemini'nin önerdiği "${directorName}" filmleri:</div>
                         ${results.map(m => `
                             <div style="display: flex; gap: 10px; align-items: center; background: #1a1a1a; border-radius: 6px; padding: 8px; margin-bottom: 6px;">
+                                <div style="width: 36px; height: 52px; flex-shrink: 0; border-radius: 4px; overflow: hidden; background: #2a2a2a; display: flex; align-items: center; justify-content: center;">
+                                    ${m.Poster !== 'N/A' ? `<img src="${m.Poster}" style="width: 100%; height: 100%; object-fit: cover;">` : '<span style="font-size: 1em;">🎬</span>'}
+                                </div>
                                 <span style="flex: 1; font-size: 0.9em; color: #ccc;">${m.Title} (${m.Year}) ${m.imdbRating !== 'N/A' ? '⭐' + m.imdbRating : ''}</span>
                                 <button class="modal-btn primary" style="flex: 0 0 auto; padding: 4px 10px; font-size: 0.8em;" onclick="closeDetailModalThenAdd('${m.imdbID}')">Ekle</button>
                             </div>
@@ -1868,6 +1871,9 @@
                         <div style="color: #999; font-size: 0.8em; margin-bottom: 8px;">✨ Gemini'nin önerdiği "${creatorName}" dizileri:</div>
                         ${results.map(sw => `
                             <div style="display: flex; gap: 10px; align-items: center; background: #1a1a1a; border-radius: 6px; padding: 8px; margin-bottom: 6px;">
+                                <div style="width: 36px; height: 52px; flex-shrink: 0; border-radius: 4px; overflow: hidden; background: #2a2a2a; display: flex; align-items: center; justify-content: center;">
+                                    ${sw.Poster !== 'N/A' ? `<img src="${sw.Poster}" style="width: 100%; height: 100%; object-fit: cover;">` : '<span style="font-size: 1em;">📺</span>'}
+                                </div>
                                 <span style="flex: 1; font-size: 0.9em; color: #ccc;">${sw.Title} (${sw.Year}) ${sw.imdbRating !== 'N/A' ? '⭐' + sw.imdbRating : ''}</span>
                                 <button class="modal-btn primary" style="flex: 0 0 auto; padding: 4px 10px; font-size: 0.8em; background: #9b7ff0;" onclick="closeSeriesDetailModalThenAdd('${sw.imdbID}')">Ekle</button>
                             </div>
