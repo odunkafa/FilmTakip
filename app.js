@@ -129,16 +129,25 @@
 
                 if (data.error) {
                     console.error('Gemini API hatası:', data.error);
+                    lastGeminiDebugInfo = 'API Hatası: ' + JSON.stringify(data.error);
                     return null;
                 }
 
                 const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!text) {
+                    lastGeminiDebugInfo = 'Beklenmeyen yanıt yapısı: ' + JSON.stringify(data).substring(0, 300);
+                }
+
                 return text || null;
             } catch (error) {
                 console.error('Gemini çağrı hatası:', error);
+                lastGeminiDebugInfo = 'İstek hatası: ' + error.message;
                 return null;
             }
         }
+
+        let lastGeminiDebugInfo = '';
 
         // Gemini'den film adı listesi isteyip, satır satır ayrıştırır
         async function askGeminiForMovieTitles(prompt, count = 5) {
@@ -629,6 +638,18 @@
                     plot: document.getElementById('moviePlot').value,
                     rating: document.getElementById('movieRating').value,
                     posterUrl: movieForm.dataset.posterUrl || '',
+                    director: document.getElementById('movieDirector').value, // OMDb'de diziler için "Yaratıcı" bilgisi burada gelir
+                    actors: movieForm.dataset.actors || '',
+                    writer: movieForm.dataset.writer || '',
+                    runtime: movieForm.dataset.runtime || '',
+                    rated: movieForm.dataset.rated || '',
+                    released: movieForm.dataset.released || '',
+                    language: movieForm.dataset.language || '',
+                    country: movieForm.dataset.country || '',
+                    awards: movieForm.dataset.awards || '',
+                    boxoffice: movieForm.dataset.boxoffice || '',
+                    rottenTomatoes: movieForm.dataset.rottenTomatoes || '',
+                    metacritic: movieForm.dataset.metacritic || '',
                     totalSeasons: parseInt(movieForm.dataset.totalSeasons) || 0,
                     seasons: seasons,
                     dateAdded: new Date().toISOString()
@@ -1353,7 +1374,7 @@
                 );
 
                 if (!titles || titles.length === 0) {
-                    container.innerHTML = `<p style="color: #999; font-size: 0.85em; margin-bottom: 15px;">Öneri alınamadı, lütfen tekrar deneyin.</p>`;
+                    container.innerHTML = `<p style="color: #999; font-size: 0.85em; margin-bottom: 15px;">Öneri alınamadı, lütfen tekrar deneyin.</p><p style="color:#ff5576; font-size:0.75em; word-break: break-all;">Debug: ${lastGeminiDebugInfo}</p>`;
                     return;
                 }
 
@@ -1718,6 +1739,15 @@
             if (!fromHistory) popUiStateIfMatch(closeSeriesDetailModal);
         }
 
+        // Dizi detayından "Ekle" butonuna basılınca: modalı sessizce kapat (history geri gitmeden)
+        // ve hemen ardından Film/Dizi Ekle modalını aç.
+        function closeSeriesDetailModalThenAdd(imdbID) {
+            seriesDetailModal.classList.remove('active');
+            removeFromUiStackSilently(closeSeriesDetailModal);
+            openModal();
+            selectMovie(imdbID);
+        }
+
         function renderSeriesDetailModal(s) {
             const { totalEp, watchedEp } = getSeriesProgress(s);
             const percentage = totalEp > 0 ? Math.round((watchedEp / totalEp) * 100) : 0;
@@ -1754,9 +1784,13 @@
                 <h2 style="color: #9b7ff0; margin-bottom: 5px;">${s.nameTR || s.name}</h2>
                 ${s.nameTR && s.nameTR !== s.name ? `<p style="color: #999; font-size: 0.9em; margin-bottom: 15px;">Orijinal Adı: ${s.name}</p>` : '<div style="margin-bottom: 15px;"></div>'}
 
-                <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
                     <span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">📅 ${s.year}</span>
+                    ${s.runtime ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">⏱️ ${s.runtime}</span>` : ''}
+                    ${s.rated ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">🔞 ${s.rated}</span>` : ''}
                     ${s.rating ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">⭐ ${s.rating}</span>` : ''}
+                    ${s.rottenTomatoes ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">🍅 ${s.rottenTomatoes}</span>` : ''}
+                    ${s.metacritic ? `<span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">Ⓜ️ ${s.metacritic}</span>` : ''}
                     <span style="background: #1a1a1a; padding: 5px 12px; border-radius: 6px; font-size: 0.9em;">📦 ${s.totalSeasons} Sezon</span>
                 </div>
 
@@ -1770,9 +1804,48 @@
                     </div>
                 </div>
 
+                <div style="margin-bottom: 12px; font-size: 0.9em;">
+                    <span style="color: #9b7ff0; font-weight: 600;">Tür: </span>
+                    <span style="color: #ccc;">${s.genre}</span>
+                </div>
+
+                ${s.director ? `
+                <div style="margin-bottom: 12px; font-size: 0.9em;">
+                    <span style="color: #9b7ff0; font-weight: 600;">Yaratıcı/Yönetmen: </span>
+                    <span style="color: #ccc;">${s.director}</span>
+                    <button class="modal-btn secondary" style="padding: 4px 10px; font-size: 0.75em; margin-left: 8px;" onclick="showSeriesCreatorOtherWorks('${s.director.split(',')[0].trim().replace(/'/g, "\\'")}')">📺 Diğer Dizileri</button>
+                </div>` : ''}
+
+                ${s.writer ? `
+                <div style="margin-bottom: 12px; font-size: 0.9em;">
+                    <span style="color: #9b7ff0; font-weight: 600;">Senarist: </span>
+                    <span style="color: #ccc;">${s.writer}</span>
+                </div>` : ''}
+
+                ${s.actors ? `
+                <div style="margin-bottom: 12px; font-size: 0.9em;">
+                    <span style="color: #9b7ff0; font-weight: 600;">🎭 Oyuncular: </span>
+                    <span style="color: #ccc;">${s.actors}</span>
+                </div>` : ''}
+
+                <div id="seriesCreatorOtherWorksResult"></div>
+
                 <div style="margin-bottom: 15px;">
                     <div style="color: #9b7ff0; font-weight: 600; margin-bottom: 4px;">Konusu</div>
                     <div style="color: #ccc; line-height: 1.5; font-size: 0.9em;">${s.plot}</div>
+                </div>
+
+                ${s.awards ? `
+                <div style="margin-bottom: 12px; font-size: 0.9em;">
+                    <span style="color: #9b7ff0; font-weight: 600;">🏆 Ödüller: </span>
+                    <span style="color: #ccc;">${s.awards}</span>
+                </div>` : ''}
+
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.8em; color: #888; margin-bottom: 15px;">
+                    ${s.country ? `<span>🌍 ${s.country}</span>` : ''}
+                    ${s.language ? `<span>🗣️ ${s.language}</span>` : ''}
+                    ${s.released ? `<span>🎬 İlk Yayın: ${s.released}</span>` : ''}
+                    ${s.boxoffice ? `<span>💰 ${s.boxoffice}</span>` : ''}
                 </div>
 
                 <h4 style="color: #e0e0e0; margin-bottom: 10px;">Sezonlar ve Bölümler</h4>
@@ -1783,6 +1856,66 @@
                     <button class="modal-btn secondary" style="flex: 1;" onclick="closeSeriesDetailModal()">Kapat</button>
                 </div>
             `;
+        }
+
+        // Dizinin yaratıcısının/yönetmeninin diğer dizilerini Gemini'den önerme
+        async function showSeriesCreatorOtherWorks(creatorName) {
+            const container = document.getElementById('seriesCreatorOtherWorksResult');
+            if (!container) return;
+
+            container.innerHTML = `
+                <div style="text-align: center; padding: 15px;">
+                    <div class="loading-spinner"></div>
+                    <p style="color: #999; font-size: 0.8em; margin-top: 8px;">Gemini'den öneriler isteniyor...</p>
+                </div>
+            `;
+
+            try {
+                const titles = await askGeminiForMovieTitles(
+                    `${creatorName} adlı kişinin yaratıcısı/yönetmeni olduğu en bilinen 6 TV dizisi nedir?`,
+                    6
+                );
+
+                if (!titles || titles.length === 0) {
+                    container.innerHTML = `<p style="color: #999; font-size: 0.85em; margin-bottom: 15px;">Öneri alınamadı, lütfen tekrar deneyin.</p><p style="color:#ff5576; font-size:0.75em; word-break: break-all;">Debug: ${lastGeminiDebugInfo}</p>`;
+                    return;
+                }
+
+                const existingTitles = new Set(series.map(x => x.name.toLowerCase()));
+                const results = [];
+
+                for (const title of titles) {
+                    try {
+                        const response = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&type=series&apikey=${OMDB_API}`);
+                        const show = await response.json();
+                        if (show.Response !== 'False' && !existingTitles.has(show.Title.toLowerCase())) {
+                            results.push(show);
+                        }
+                    } catch (e) {
+                        // tek bir başlık başarısız olursa diğerlerine devam et
+                    }
+                }
+
+                if (results.length === 0) {
+                    container.innerHTML = `<p style="color: #999; font-size: 0.85em; margin-bottom: 15px;">Zaten kütüphanenizde olabilirler veya bulunamadı.</p>`;
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div style="margin-top: 10px; margin-bottom: 15px;">
+                        <div style="color: #999; font-size: 0.8em; margin-bottom: 8px;">✨ Gemini'nin önerdiği "${creatorName}" dizileri:</div>
+                        ${results.map(sw => `
+                            <div style="display: flex; gap: 10px; align-items: center; background: #1a1a1a; border-radius: 6px; padding: 8px; margin-bottom: 6px;">
+                                <span style="flex: 1; font-size: 0.9em; color: #ccc;">${sw.Title} (${sw.Year}) ${sw.imdbRating !== 'N/A' ? '⭐' + sw.imdbRating : ''}</span>
+                                <button class="modal-btn primary" style="flex: 0 0 auto; padding: 4px 10px; font-size: 0.8em; background: #9b7ff0;" onclick="closeSeriesDetailModalThenAdd('${sw.imdbID}')">Ekle</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Dizi yaratıcısı arama hatası:', error);
+                container.innerHTML = `<p style="color: #ff5576; font-size: 0.85em;">Arama sırasında hata oluştu.</p>`;
+            }
         }
 
         // Bölüm tıklamalarını hızlı art arda yapmaya karşı koruma
