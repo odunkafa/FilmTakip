@@ -1959,8 +1959,9 @@
                 const { totalEp, watchedEp } = getSeriesProgress(s);
                 const current = getCurrentSeasonEpisode(s);
                 const progressText = current
-                    ? `Sezon ${current.season}, Bölüm ${current.episode}`
-                    : (totalEp > 0 ? '✓ Tamamlandı' : 'Bölüm bilgisi yok');
+                    ? `S${current.season} B${current.episode}`
+                    : (totalEp > 0 ? '✓ Tamamlandı' : 'Bölüm yok');
+                const percentage = totalEp > 0 ? Math.round((watchedEp / totalEp) * 100) : 0;
 
                 return `
                     <div class="movie-card" onclick="openSeriesDetailModal(${s.id})">
@@ -1973,14 +1974,56 @@
                                 <span>${s.year}</span>
                                 ${s.rating ? `<span>⭐ ${s.rating}</span>` : ''}
                             </div>
-                            <div class="movie-genre" style="background: #2a1a3a; color: #9b7ff0;">${progressText}</div>
-                            <div style="background: #1a1a1a; border-radius: 6px; height: 6px; overflow: hidden; margin-top: 8px;">
-                                <div style="background: linear-gradient(135deg, #9b7ff0, #6a4fd4); height: 100%; width: ${totalEp > 0 ? Math.round((watchedEp/totalEp)*100) : 0}%;"></div>
+                            <div class="movie-genre" style="background: #2a1a3a; color: #9b7ff0; display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+                                <span>${progressText}</span>
+                                <span style="flex-shrink: 0; font-size: 0.9em;">%${percentage}</span>
                             </div>
-                            <div style="font-size: 0.75em; color: #999; margin-top: 4px; text-align: right;">${watchedEp}/${totalEp} bölüm</div>
                         </div>
                     </div>
                 `;
+            }).join('');
+
+            renderSeriesPosterGallery(filtered);
+        }
+
+        // ============ DİZİ GALERİ (POSTER) GÖRÜNÜMÜ ============
+        let seriesGalleryViewActive = false;
+        const seriesPosterGallery = document.getElementById('seriesPosterGallery');
+        const seriesGalleryToggleBtn = document.getElementById('seriesGalleryToggleBtn');
+
+        seriesGalleryToggleBtn.addEventListener('click', () => {
+            seriesGalleryViewActive = !seriesGalleryViewActive;
+            seriesGrid.style.display = seriesGalleryViewActive ? 'none' : '';
+            seriesPosterGallery.style.display = seriesGalleryViewActive ? 'grid' : 'none';
+            seriesGalleryToggleBtn.style.background = seriesGalleryViewActive ? '#9b7ff0' : '#2a2a2a';
+            seriesGalleryToggleBtn.style.color = seriesGalleryViewActive ? '#1a1a1a' : '#e0e0e0';
+        });
+
+        function renderSeriesPosterGallery(filteredSeries) {
+            if (filteredSeries.length === 0) {
+                seriesPosterGallery.innerHTML = '';
+                return;
+            }
+
+            seriesPosterGallery.innerHTML = filteredSeries.map(s => {
+                const { totalEp, watchedEp } = getSeriesProgress(s);
+                const percentage = totalEp > 0 ? Math.round((watchedEp / totalEp) * 100) : 0;
+                const isCompleted = totalEp > 0 && watchedEp === totalEp;
+
+                return `
+                <div onclick="openSeriesDetailModal(${s.id})" style="cursor: pointer; position: relative; aspect-ratio: 2/3; border-radius: 8px; overflow: hidden; background: #2a2a2a; border: 2px solid ${isCompleted ? '#9b7ff0' : 'transparent'};">
+                    ${s.posterUrl
+                        ? `<img src="${s.posterUrl}" alt="${s.name}" style="width: 100%; height: 100%; object-fit: cover;">`
+                        : `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size: 2em;">📺</div>`
+                    }
+                    <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.75); padding: 4px 6px;">
+                        <div style="background: #1a1a1a; border-radius: 4px; height: 4px; overflow: hidden;">
+                            <div style="background: linear-gradient(135deg, #9b7ff0, #6a4fd4); height: 100%; width: ${percentage}%;"></div>
+                        </div>
+                    </div>
+                    ${isCompleted ? `<div style="position: absolute; top: 4px; right: 4px; background: #9b7ff0; color: #1a1a1a; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 0.8em; font-weight: bold;">✓</div>` : ''}
+                </div>
+            `;
             }).join('');
         }
 
