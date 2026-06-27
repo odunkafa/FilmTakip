@@ -2197,6 +2197,11 @@
             renderSeriesStats();
             renderSeriesDetailModal(s); // Modalı yeniden çiz, güncel ilerlemeyi göster
 
+            // Dizi listesi paneli açıksa (kartlardaki ilerleme çubuğu), onu da güncelle
+            if (seriesListPanel.style.display !== 'none') {
+                renderSeriesList();
+            }
+
             // KORUMA 2: Senkronizasyonu geciktir (debounce) - art arda hızlı tıklamalarda
             // her tıklama için ayrı bir Drive isteği göndermek yerine, son tıklamadan
             // 1 saniye sonra TEK BİR istek gönderilir. Bu, çakışan (race condition)
