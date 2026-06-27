@@ -1977,6 +1977,17 @@
             pushUiState(closeSeriesDetailModal);
         }
 
+        // Kullanıcı bir sezonu manuel açıp/kapattığında bu tercihi hatırlar,
+        // böylece bölüm işaretlemesi sonrası modal yeniden çizilince sezon kapanmaz.
+        function handleSeasonToggle(seriesId, seasonNumber, isOpen) {
+            if (!openSeasonsBySeriesId[seriesId]) openSeasonsBySeriesId[seriesId] = new Set();
+            if (isOpen) {
+                openSeasonsBySeriesId[seriesId].add(seasonNumber);
+            } else {
+                openSeasonsBySeriesId[seriesId].delete(seasonNumber);
+            }
+        }
+
         function closeSeriesDetailModal(fromHistory) {
             seriesDetailModal.classList.remove('active');
             if (!fromHistory) popUiStateIfMatch(closeSeriesDetailModal);
@@ -2000,9 +2011,16 @@
             selectMovie(imdbID);
         }
 
+        // Dizi detay modalında hangi sezonun açık olduğunu hatırlar (id -> seasonNumber seti)
+        // Bu sayede bir bölüm işaretlendiğinde modal yeniden çizilse de sezon kapanmaz.
+        let openSeasonsBySeriesId = {};
+
         function renderSeriesDetailModal(s) {
             const { totalEp, watchedEp } = getSeriesProgress(s);
             const percentage = totalEp > 0 ? Math.round((watchedEp / totalEp) * 100) : 0;
+
+            if (!openSeasonsBySeriesId[s.id]) openSeasonsBySeriesId[s.id] = new Set();
+            const openSeasons = openSeasonsBySeriesId[s.id];
 
             const seasonsHtml = s.seasons.map(season => {
                 const seasonWatched = season.episodes.filter(ep => ep.watched).length;
@@ -2017,8 +2035,10 @@
                     </div>
                 `).join('');
 
+                const isOpen = openSeasons.has(season.seasonNumber);
+
                 return `
-                    <details style="margin-bottom: 10px; background: #1a1a1a; border-radius: 8px; padding: 10px;">
+                    <details ${isOpen ? 'open' : ''} ontoggle="handleSeasonToggle(${s.id}, ${season.seasonNumber}, this.open)" style="margin-bottom: 10px; background: #1a1a1a; border-radius: 8px; padding: 10px;">
                         <summary style="cursor: pointer; color: #9b7ff0; font-weight: 600; padding: 4px;">
                             Sezon ${season.seasonNumber} (${seasonWatched}/${season.episodes.length})
                         </summary>
