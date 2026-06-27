@@ -1725,7 +1725,7 @@
             const seasonsHtml = s.seasons.map(season => {
                 const seasonWatched = season.episodes.filter(ep => ep.watched).length;
                 const episodesHtml = season.episodes.map(ep => `
-                    <div onclick="toggleEpisodeWatched(${s.id}, ${season.seasonNumber}, ${ep.episodeNumber})" style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; cursor: pointer; background: ${ep.watched ? '#9b7ff015' : 'transparent'};">
+                    <div class="episode-row" onclick="toggleEpisodeWatched(${s.id}, ${season.seasonNumber}, ${ep.episodeNumber})" style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; cursor: pointer; background: ${ep.watched ? '#9b7ff015' : 'transparent'}; transition: opacity 0.2s;">
                         <span style="width: 24px; height: 24px; border-radius: 50%; border: 2px solid ${ep.watched ? '#9b7ff0' : '#555'}; background: ${ep.watched ? '#9b7ff0' : 'transparent'}; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 0.8em; color: #1a1a1a; font-weight: bold;">
                             ${ep.watched ? '✓' : ''}
                         </span>
@@ -1785,7 +1785,29 @@
             `;
         }
 
+        // Bölüm tıklamalarını hızlı art arda yapmaya karşı koruma
+        let episodeClickLocked = false;
+        let seriesSyncDebounceTimer = null;
+
         function toggleEpisodeWatched(seriesId, seasonNumber, episodeNumber) {
+            // KORUMA 1: Tıklama kilidi - 1 saniye içinde tekrar tıklamayı engeller
+            if (episodeClickLocked) return;
+            episodeClickLocked = true;
+
+            // Görsel geri bildirim: kilit süresince tüm bölüm satırlarını soluklaştır
+            document.querySelectorAll('.episode-row').forEach(row => {
+                row.style.opacity = '0.5';
+                row.style.pointerEvents = 'none';
+            });
+
+            setTimeout(() => {
+                episodeClickLocked = false;
+                document.querySelectorAll('.episode-row').forEach(row => {
+                    row.style.opacity = '1';
+                    row.style.pointerEvents = 'auto';
+                });
+            }, 1000);
+
             const s = series.find(x => x.id === seriesId);
             if (!s) return;
 
@@ -1799,15 +1821,27 @@
             saveSeries();
             renderSeriesStats();
             renderSeriesDetailModal(s); // Modalı yeniden çiz, güncel ilerlemeyi göster
-            syncSeriesToDrive();
+
+            // KORUMA 2: Senkronizasyonu geciktir (debounce) - art arda hızlı tıklamalarda
+            // her tıklama için ayrı bir Drive isteği göndermek yerine, son tıklamadan
+            // 1 saniye sonra TEK BİR istek gönderilir. Bu, çakışan (race condition)
+            // isteklerin Sheet'te tutarsız/çoklu kayıt oluşturmasını önler.
+            clearTimeout(seriesSyncDebounceTimer);
+            syncText.textContent = 'Bekleniyor...';
+            seriesSyncDebounceTimer = setTimeout(() => {
+                syncSeriesToDrive();
+            }, 1000);
         }
 
         // Google Drive'a Dizi Senkronizasyonu
         async function syncSeriesToDrive() {
             if (!appsScriptUrl || !googleIdToken) return;
 
+            syncIndicator.classList.add('syncing');
+            syncText.textContent = 'Senkronize ediliyor...';
+
             try {
-                await fetch(appsScriptUrl, {
+                const response = await fetch(appsScriptUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({
@@ -1815,8 +1849,26 @@
                         seriesData: series // Apps Script tarafında ayrı bir sheet'e yazılacak
                     })
                 });
+
+                const rawText = await response.text();
+                let result;
+                try {
+                    result = JSON.parse(rawText);
+                } catch (e) {
+                    throw new Error('Yanıt okunamadı');
+                }
+
+                if (!result.success) {
+                    throw new Error(result.error || 'Bilinmeyen hata');
+                }
+
+                syncIndicator.classList.remove('syncing', 'error');
+                syncText.textContent = 'Senkronizasyon aktif';
             } catch (error) {
                 console.error('Dizi senkronizasyon hatası:', error);
+                syncIndicator.classList.remove('syncing');
+                syncIndicator.classList.add('error');
+                syncText.textContent = 'Hata: ' + error.message;
             }
         }
 
